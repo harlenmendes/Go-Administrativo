@@ -449,13 +449,31 @@ async function fetchDetailedEventsFromGoogle(accessToken, startDate, endDate) {
             if (!formattedDate) continue;
             const [isoDate, displayDate, weekday] = formattedDate.split('|');
 
+            const isAllDay = Boolean(event.start?.date && !event.start?.dateTime);
+            const startTime = extractTimeInSaoPaulo(event.start);
+            const endTime = isAllDay ? 'Dia inteiro' : extractTimeInSaoPaulo(event.end);
+            const eventDatetime = event.start?.dateTime || `${isoDate}T12:00:00-03:00`;
+            const endDatetime = event.end?.dateTime || eventDatetime;
+
+            let durationMinutes = null;
+            if (!isAllDay && event.start?.dateTime && event.end?.dateTime) {
+                const diffMs = new Date(event.end.dateTime).getTime() - new Date(event.start.dateTime).getTime();
+                if (Number.isFinite(diffMs) && diffMs > 0) {
+                    durationMinutes = Math.round(diffMs / 60000);
+                }
+            }
+
             events.push({
                 eventId: event.id,
                 date: isoDate,
                 displayDate,
                 weekday,
-                startTime: extractTimeInSaoPaulo(event.start),
-                eventDatetime: event.start?.dateTime || `${isoDate}T12:00:00-03:00`,
+                startTime,
+                endTime,
+                isAllDay,
+                durationMinutes,
+                eventDatetime,
+                endDatetime,
                 monthKey: isoDate.slice(0, 7),
                 rawSummary: summary.trim(),
                 calendarName
@@ -2082,6 +2100,64 @@ module.exports = async function handler(req, res) {
                 });
             }
             return res.status(200).json({ ok: true });
+        }
+
+        // --------------------------------------------------------------------
+        // E. VISUALIZADOR DA SEMANA (AGENDA GOOGLE #)
+        // --------------------------------------------------------------------
+        // GET /api/agenda/semana?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+        if (pathname === '/api/agenda/semana' && method === 'GET') {
+            const today = getSaoPauloTodayStr();
+            const reqStart = (parsedUrl.searchParams.get('startDate') || '').trim();
+            const reqEnd = (parsedUrl.searchParams.get('endDate') || '').trim();
+            const isoRe = /^\d{4}-\d{2}-\d{2}$/;
+
+            let startDate = isoRe.test(reqStart) ? reqStart : '';
+            let endDate = isoRe.test(reqEnd) ? reqEnd : '';
+
+            if (!startDate || !endDate) {
+                const [y, m, d] = today.split('-').map(Number);
+                const ref = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+                const dow = ref.getUTCDay();
+                const diffToMonday = dow === 0 ? -6 : 1 - dow;
+                const monday = new Date(ref);
+                monday.setUTCDate(ref.getUTCDate() + diffToMonday);
+                const sunday = new Date(monday);
+                sunday.setUTCDate(monday.getUTCDate() + 6);
+                startDate = startDate || monday.toISOString().slice(0, 10);
+                endDate = endDate || sunday.toISOString().slice(0, 10);
+            }
+
+            if (endDate < startDate) {
+                return res.status(400).json({ error: 'endDate deve ser maior ou igual a startDate.' });
+            }
+
+            const googleConnected = Boolean(session && session.accessToken);
+            let googleError = null;
+            let events = [];
+
+            if (googleConnected) {
+                try {
+                    events = await fetchDetailedEventsFromGoogle(session.accessToken, startDate, endDate);
+                } catch (err) {
+                    console.error('Erro ao carregar agenda semanal:', err);
+                    googleError = err.message;
+                }
+            }
+
+            const mappings = await supabaseRequest('patient_name_mappings', {
+                query: 'select=month_key,old_name,new_name'
+            }).catch(() => []);
+
+            return res.status(200).json({
+                today,
+                startDate,
+                endDate,
+                googleConnected,
+                googleError,
+                events,
+                mappings: mappings || []
+            });
         }
 
         return res.status(404).json({ error: `Rota não encontrada: ${method} ${pathname}` });

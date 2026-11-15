@@ -19,6 +19,7 @@ const navItems = [
   { path: '/', label: 'Início', icon: LayoutGrid, matchExact: true },
   { path: '/acompanhamento', label: 'Acompanhamento', icon: HeartPulse },
   { path: '/pacientes', label: 'Pacientes', icon: UsersRound },
+  { path: '/agenda', label: 'Agenda Semanal', icon: CalendarRange },
   { path: '/pacotes', label: 'Pacotes', icon: PackageCheck },
   { path: '/fechamento', label: 'Fechamento', icon: Wallet },
   { path: '/configuracoes', label: 'Configurações', icon: SlidersHorizontal },

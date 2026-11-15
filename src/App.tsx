@@ -5,6 +5,7 @@ import { Hub } from '@/pages/Hub'
 import { Dashboard } from '@/pages/Dashboard'
 import { Fechamento } from '@/pages/Fechamento'
 import { Pacotes } from '@/pages/Pacotes'
+import { AgendaSemanal } from '@/pages/Agenda'
 import { PatientList } from '@/pages/Patients/PatientList'
 import { PatientProfile } from '@/pages/Patients/PatientProfile'
 import { NewPatient } from '@/pages/Patients/NewPatient'
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="/nova-evolucao" element={<NovaEvolucao />} />
         <Route path="/fechamento" element={<Fechamento />} />
         <Route path="/pacotes" element={<Pacotes />} />
+        <Route path="/agenda" element={<AgendaSemanal />} />
         <Route path="/configuracoes" element={<Settings />} />
         <Route
           path="*"

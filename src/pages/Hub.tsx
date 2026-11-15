@@ -242,26 +242,35 @@ export function Hub() {
         </div>
       </section>
 
-      {/* Em Breve (Visual limpo e discreto) */}
+      {/* Agenda & Controle de Pacotes */}
       <section className="space-y-4 pt-2">
         <div className="flex items-center gap-2 text-brand-muted">
           <Sparkles size={15} className="text-secondary-600" />
           <h2 className="text-xs font-semibold uppercase tracking-widest">
-            Em Breve
+            Agenda &amp; Pacotes
           </h2>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <div className="rounded-3xl border border-dashed border-brand-border bg-white/60 p-6 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-brand-cream text-brand-muted flex items-center justify-center flex-shrink-0">
-              <CalendarRange size={22} strokeWidth={1.8} />
+          <div
+            onClick={() => navigate('/agenda')}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && navigate('/agenda')}
+            className="group rounded-3xl border border-brand-border bg-white shadow-card hover:shadow-card-hover hover:border-secondary-300 transition-all cursor-pointer p-6 flex items-center justify-between gap-4"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-secondary-50 text-secondary-700 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+                <CalendarRange size={22} strokeWidth={1.9} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-primary">Agenda Semanal</h3>
+                <p className="text-xs text-brand-muted mt-0.5">
+                  Grade da semana em pílulas com cores únicas e contador.
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-primary">Agenda Semanal</h3>
-              <p className="text-xs text-brand-muted mt-0.5">
-                Visualização rápida dos horários da semana.
-              </p>
-            </div>
+            <ArrowRight size={17} className="text-secondary-700 group-hover:translate-x-1 transition-transform flex-shrink-0" />
           </div>
 
           <div
