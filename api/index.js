@@ -73,12 +73,17 @@ function serializeCookie(name, value, options = {}) {
 }
 
 function getBaseUrl(req) {
+    const rawHost = req.headers['x-forwarded-host'] || req.headers.host;
+    if (rawHost) {
+        const host = String(rawHost).split(',')[0].trim();
+        const rawProto = req.headers['x-forwarded-proto'] || (host.includes('localhost') ? 'http' : 'https');
+        const proto = String(rawProto).split(',')[0].trim();
+        return `${proto}://${host}`;
+    }
     if (process.env.APP_BASE_URL) {
         return process.env.APP_BASE_URL.replace(/\/$/, '');
     }
-    const proto = req.headers['x-forwarded-proto'] || 'http';
-    const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
-    return `${proto}://${host}`;
+    return 'http://localhost:3000';
 }
 
 function isSecureRequest(req) {
