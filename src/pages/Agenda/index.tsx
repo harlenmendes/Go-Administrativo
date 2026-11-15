@@ -296,8 +296,8 @@ export function AgendaSemanal() {
 
       {/* Barra de Navegação Semanal + Contadores */}
       <section className="bg-white rounded-3xl border border-brand-border shadow-card p-4 sm:p-5 space-y-4">
-        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-          {/* Controles da Semana */}
+        {/* Linha 1: Navegação da Semana + Seletor Seg–Sáb / Seg–Dom */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2.5">
             <div className="inline-flex items-center bg-brand-cream p-1 rounded-2xl border border-brand-border">
               <button
@@ -330,69 +330,82 @@ export function AgendaSemanal() {
               </button>
             </div>
 
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-primary-50/70 border border-primary-100 text-primary">
+            <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-primary-50/70 border border-primary-100 text-primary">
               <CalendarDays size={16} className="text-secondary-600 flex-shrink-0" />
               <span className="text-sm font-bold tracking-tight">{weekRangeLabel}</span>
             </div>
-
-            <button
-              type="button"
-              onClick={() => setIncludeSunday((v) => !v)}
-              className={cn(
-                'inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-semibold border transition-colors',
-                showSunday
-                  ? 'bg-secondary-50 border-secondary-300 text-secondary-800'
-                  : 'bg-white border-brand-border text-brand-muted hover:text-primary',
-              )}
-              title="Alternar exibição do Domingo"
-            >
-              <CalendarRange size={14} />
-              {showSunday ? 'Seg – Dom' : 'Seg – Sáb'}
-            </button>
           </div>
 
-          {/* Contadores da Semana */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-primary text-white shadow-sm">
-              <div className="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center">
-                <Sparkles size={15} />
-              </div>
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-white/75 font-semibold leading-none">
-                  Atendimentos na semana
-                </p>
-                <p className="text-xl font-extrabold leading-tight mt-0.5 tabular-nums">
-                  {loading ? '—' : isFiltered ? `${totalWeekVisible} de ${totalWeekAll}` : totalWeekVisible}
-                </p>
-              </div>
-            </div>
+          <div className="inline-flex items-center bg-brand-cream p-1 rounded-2xl border border-brand-border self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setIncludeSunday(false)}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3.5 h-9 rounded-xl text-xs font-bold transition-all',
+                !showSunday
+                  ? 'bg-white text-primary shadow-sm'
+                  : 'text-brand-muted hover:text-primary',
+              )}
+            >
+              <CalendarRange size={14} />
+              Seg – Sáb
+            </button>
+            <button
+              type="button"
+              onClick={() => setIncludeSunday(true)}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3.5 h-9 rounded-xl text-xs font-bold transition-all',
+                showSunday
+                  ? 'bg-white text-primary shadow-sm'
+                  : 'text-brand-muted hover:text-primary',
+              )}
+            >
+              Seg – Dom
+            </button>
+          </div>
+        </div>
 
-            <div className="flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-brand-cream border border-brand-border">
-              <div className="w-8 h-8 rounded-full bg-secondary-100 text-secondary-700 flex items-center justify-center">
-                <Users size={15} />
-              </div>
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold leading-none">
-                  Pacientes únicos
-                </p>
-                <p className="text-xl font-extrabold text-primary leading-tight mt-0.5 tabular-nums">
-                  {loading ? '—' : patientLegend.length}
-                </p>
-              </div>
+        {/* Linha 2: 3 Indicadores Simétricos em Grade */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+          <div className="flex items-center justify-between gap-3 px-5 py-3.5 rounded-2xl bg-primary text-white shadow-sm">
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-wider text-white/75 font-semibold leading-none">
+                Atendimentos na semana
+              </p>
+              <p className="text-2xl font-extrabold leading-tight mt-1 tabular-nums">
+                {loading ? '—' : isFiltered ? `${totalWeekVisible} de ${totalWeekAll}` : totalWeekVisible}
+              </p>
             </div>
+            <div className="w-10 h-10 rounded-2xl bg-white/15 flex items-center justify-center flex-shrink-0">
+              <Sparkles size={18} />
+            </div>
+          </div>
 
-            <div className="hidden sm:flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-brand-cream border border-brand-border">
-              <div className="w-8 h-8 rounded-full bg-primary-50 text-primary flex items-center justify-center">
-                <Clock size={15} />
-              </div>
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold leading-none">
-                  Dias com agenda
-                </p>
-                <p className="text-xl font-extrabold text-primary leading-tight mt-0.5 tabular-nums">
-                  {loading ? '—' : `${activeDaysCount}/${weekColumns.length}`}
-                </p>
-              </div>
+          <div className="flex items-center justify-between gap-3 px-5 py-3.5 rounded-2xl bg-brand-cream/80 border border-brand-border">
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-wider text-brand-muted font-semibold leading-none">
+                Pacientes únicos
+              </p>
+              <p className="text-2xl font-extrabold text-primary leading-tight mt-1 tabular-nums">
+                {loading ? '—' : patientLegend.length}
+              </p>
+            </div>
+            <div className="w-10 h-10 rounded-2xl bg-secondary-100 text-secondary-700 flex items-center justify-center flex-shrink-0">
+              <Users size={18} />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 px-5 py-3.5 rounded-2xl bg-brand-cream/80 border border-brand-border">
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-wider text-brand-muted font-semibold leading-none">
+                Dias com agenda
+              </p>
+              <p className="text-2xl font-extrabold text-primary leading-tight mt-1 tabular-nums">
+                {loading ? '—' : `${activeDaysCount}/${weekColumns.length}`}
+              </p>
+            </div>
+            <div className="w-10 h-10 rounded-2xl bg-primary-50 text-primary flex items-center justify-center flex-shrink-0">
+              <Clock size={18} />
             </div>
           </div>
         </div>
