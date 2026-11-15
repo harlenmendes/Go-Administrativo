@@ -173,30 +173,6 @@ export function AppShell() {
                 </button>
               )
             })}
-
-            {/* Divisor sutil + Item futuro */}
-            <div className="pt-3 mt-3 border-t border-white/10">
-              <div
-                title={!isExpanded ? 'Agenda Semanal (Em breve)' : undefined}
-                className={cn(
-                  'w-full flex items-center rounded-2xl text-primary-200/45 cursor-default',
-                  isExpanded ? 'px-4 py-3 gap-3.5' : 'md:justify-center md:p-3.5 px-4 py-3 gap-3.5'
-                )}
-              >
-                <CalendarRange size={20} strokeWidth={1.7} className="flex-shrink-0" />
-                <div
-                  className={cn(
-                    'flex items-center justify-between flex-1 overflow-hidden',
-                    isExpanded ? 'opacity-100' : 'md:hidden opacity-100'
-                  )}
-                >
-                  <span className="text-xs font-medium whitespace-nowrap">Agenda Semanal</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-secondary-300 font-semibold">
-                    Breve
-                  </span>
-                </div>
-              </div>
-            </div>
           </nav>
         </div>
 

@@ -4,6 +4,7 @@ import {
   Calendar,
   CalendarDays,
   CalendarRange,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -53,6 +54,7 @@ export function AgendaSemanal() {
 
   const [selectedPatientKey, setSelectedPatientKey] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [legendExpanded, setLegendExpanded] = useState(false)
   const [mobileDayISO, setMobileDayISO] = useState<string>(() => getLocalTodayISO())
   const [mobileShowAllDays, setMobileShowAllDays] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState<ResolvedAgendaEvent | null>(null)
@@ -395,89 +397,124 @@ export function AgendaSemanal() {
           </div>
         </div>
 
-        {/* Legenda de Cores por Paciente (Pílulas clicáveis para filtrar) + Busca */}
+        {/* Legenda de Cores por Paciente (Retraída por padrão; expansível na setinha) */}
         {googleConnected && patientLegend.length > 0 && (
-          <div className="pt-3 border-t border-brand-border space-y-2.5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-xs font-semibold text-brand-muted">
-                <Filter size={13} className="text-secondary-600" />
-                <span>Pacientes da semana (clique na pílula para destacar):</span>
-                {selectedPatientKey && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPatientKey(null)}
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary text-white text-[11px] font-semibold hover:bg-primary-800 transition-colors"
-                  >
-                    <X size={11} />
-                    Limpar filtro
-                  </button>
-                )}
-              </div>
+          <div className="pt-3 border-t border-brand-border space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setLegendExpanded((v) => !v)}
+                aria-expanded={legendExpanded}
+                className="flex-1 flex items-center justify-between gap-3 px-3.5 py-2 rounded-2xl bg-brand-cream/70 hover:bg-brand-cream border border-brand-border/80 transition-colors text-left"
+              >
+                <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-primary">
+                  <Filter size={13} className="text-secondary-600 flex-shrink-0" />
+                  <span>Pacientes da semana</span>
+                  <span className="px-2 py-0.5 rounded-full bg-white border border-brand-border text-[11px] font-bold tabular-nums text-primary">
+                    {patientLegend.length}
+                  </span>
+                  <span className="text-[11px] font-normal text-brand-muted hidden sm:inline">
+                    (clique na setinha para filtrar por paciente)
+                  </span>
+                </div>
 
-              <div className="relative w-full sm:w-56">
-                <Search
-                  size={14}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted"
+                <ChevronDown
+                  size={16}
+                  className={cn(
+                    'text-primary transition-transform duration-200 flex-shrink-0',
+                    legendExpanded && 'rotate-180',
+                  )}
                 />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Buscar paciente..."
-                  className="w-full pl-8 pr-7 py-1.5 rounded-full border border-brand-border bg-brand-cream/60 text-xs text-primary placeholder:text-brand-muted focus:outline-none focus:ring-2 focus:ring-secondary-400"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-brand-muted hover:text-primary"
-                  >
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
+              </button>
+
+              {(selectedPatientKey || searchQuery.trim()) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedPatientKey(null)
+                    setSearchQuery('')
+                  }}
+                  className="inline-flex items-center gap-1 px-3 py-2 rounded-2xl bg-primary text-white text-xs font-semibold hover:bg-primary-800 transition-colors flex-shrink-0"
+                >
+                  <X size={12} />
+                  Limpar filtro
+                </button>
+              )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {patientLegend.map((item) => {
-                const isActive = selectedPatientKey === item.key
-                const isDimmed = selectedPatientKey !== null && !isActive
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() =>
-                      setSelectedPatientKey((prev) => (prev === item.key ? null : item.key))
-                    }
-                    style={{
-                      backgroundColor: item.color.bg,
-                      borderColor: isActive ? item.color.dot : item.color.border,
-                      color: item.color.text,
-                    }}
-                    className={cn(
-                      'inline-flex items-center gap-2 pl-2 pr-3 py-1 rounded-full border text-xs font-semibold transition-all cursor-pointer select-none',
-                      isActive && 'ring-2 ring-offset-1 ring-primary/30 scale-[1.03] shadow-sm',
-                      isDimmed && 'opacity-45 hover:opacity-85',
-                    )}
-                  >
-                    <span
-                      style={{ backgroundColor: item.color.dot }}
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+            {legendExpanded && (
+              <div className="space-y-3 pt-1 animate-fade-in">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-brand-muted">
+                    Clique em uma pílula para destacar apenas o paciente selecionado:
+                  </span>
+
+                  <div className="relative w-full sm:w-60">
+                    <Search
+                      size={14}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted"
                     />
-                    <span className="truncate max-w-[145px]">{item.name}</span>
-                    <span
-                      style={{
-                        backgroundColor: item.color.badgeBg,
-                        color: item.color.subtext,
-                      }}
-                      className="px-1.5 py-0.5 rounded-full text-[10px] font-bold tabular-nums"
-                    >
-                      {item.count}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Buscar paciente..."
+                      className="w-full pl-8 pr-7 py-1.5 rounded-full border border-brand-border bg-brand-cream/60 text-xs text-primary placeholder:text-brand-muted focus:outline-none focus:ring-2 focus:ring-secondary-400"
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-brand-muted hover:text-primary"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {patientLegend.map((item) => {
+                    const isActive = selectedPatientKey === item.key
+                    const isDimmed = selectedPatientKey !== null && !isActive
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() =>
+                          setSelectedPatientKey((prev) => (prev === item.key ? null : item.key))
+                        }
+                        style={{
+                          backgroundColor: item.color.bg,
+                          borderColor: isActive ? item.color.dot : item.color.border,
+                          color: item.color.text,
+                        }}
+                        className={cn(
+                          'inline-flex items-center gap-2 pl-2 pr-3 py-1 rounded-full border text-xs font-semibold transition-all cursor-pointer select-none',
+                          isActive && 'ring-2 ring-offset-1 ring-primary/30 scale-[1.03] shadow-sm',
+                          isDimmed && 'opacity-45 hover:opacity-85',
+                        )}
+                      >
+                        <span
+                          style={{ backgroundColor: item.color.dot }}
+                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        />
+                        <span className="truncate max-w-[145px]">{item.name}</span>
+                        <span
+                          style={{
+                            backgroundColor: item.color.badgeBg,
+                            color: item.color.subtext,
+                          }}
+                          className="px-1.5 py-0.5 rounded-full text-[10px] font-bold tabular-nums"
+                        >
+                          {item.count}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </section>
@@ -540,10 +577,23 @@ export function AgendaSemanal() {
         </div>
       )}
 
-      {/* Grade Semanal Estilo Google Agenda (Desktop / Tablet md+) */}
+      {/* Grade Semanal Estilo Google Agenda (Desktop / Tablet md+) com setas laterais */}
       {!loading && googleConnected && (
         <>
-          <section className="hidden md:block bg-white rounded-3xl border border-brand-border shadow-card overflow-hidden">
+          <div className="hidden md:flex items-start gap-2.5">
+            <div className="sticky top-1/2 -translate-y-1/2 z-20 pt-16">
+              <button
+                type="button"
+                onClick={goPrevWeek}
+                title="Semana anterior"
+                aria-label="Semana anterior"
+                className="w-10 h-14 rounded-2xl bg-white border border-brand-border shadow-card hover:shadow-card-hover hover:bg-primary hover:text-white hover:border-primary text-primary flex items-center justify-center transition-all active:scale-95"
+              >
+                <ChevronLeft size={20} />
+              </button>
+            </div>
+
+            <section className="flex-1 min-w-0 bg-white rounded-3xl border border-brand-border shadow-card overflow-hidden">
             <div className="overflow-x-auto">
               <div className="min-w-[820px]">
                 {/* Cabeçalho Fixo dos Dias */}
@@ -804,15 +854,38 @@ export function AgendaSemanal() {
                   Nenhum atendimento com # encontrado para esta seleção.
                 </p>
                 <p className="text-xs text-brand-muted mt-1">
-                  Use as setas acima para navegar entre as semanas ou limpe o filtro ativo.
+                  Use as setas ao lado da agenda ou acima para navegar entre as semanas, ou limpe o filtro ativo.
                 </p>
               </div>
             )}
-          </section>
+            </section>
 
-          {/* Visualização Mobile (< md): Seletor de Dia em Pílulas + Cards Pílula */}
+            <div className="sticky top-1/2 -translate-y-1/2 z-20 pt-16">
+              <button
+                type="button"
+                onClick={goNextWeek}
+                title="Próxima semana"
+                aria-label="Próxima semana"
+                className="w-10 h-14 rounded-2xl bg-white border border-brand-border shadow-card hover:shadow-card-hover hover:bg-primary hover:text-white hover:border-primary text-primary flex items-center justify-center transition-all active:scale-95"
+              >
+                <ChevronRight size={20} />
+              </button>
+            </div>
+          </div>
+
+          {/* Visualização Mobile (< md): Seletor de Dia em Pílulas + Setas laterais da semana */}
           <section className="md:hidden space-y-4">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-between gap-1.5">
+              <button
+                type="button"
+                onClick={goPrevWeek}
+                title="Semana anterior"
+                aria-label="Semana anterior"
+                className="w-9 h-14 rounded-2xl bg-white border border-brand-border text-primary hover:bg-brand-cream flex items-center justify-center flex-shrink-0 shadow-sm active:scale-95"
+              >
+                <ChevronLeft size={18} />
+              </button>
+
               <div className="flex gap-1.5 overflow-x-auto pb-1 flex-1">
                 {weekColumns.map((col) => {
                   const active = !mobileShowAllDays && col.isoDate === mobileDayISO
@@ -867,13 +940,23 @@ export function AgendaSemanal() {
                 type="button"
                 onClick={() => setMobileShowAllDays((v) => !v)}
                 className={cn(
-                  'px-3 py-2 rounded-2xl border text-xs font-bold flex-shrink-0',
+                  'px-2.5 py-2 rounded-2xl border text-[11px] font-bold flex-shrink-0',
                   mobileShowAllDays
                     ? 'bg-secondary-600 text-white border-secondary-600'
                     : 'bg-white text-primary border-brand-border',
                 )}
               >
-                {mobileShowAllDays ? 'Só o dia' : 'Semana toda'}
+                {mobileShowAllDays ? 'Só dia' : 'Semana'}
+              </button>
+
+              <button
+                type="button"
+                onClick={goNextWeek}
+                title="Próxima semana"
+                aria-label="Próxima semana"
+                className="w-9 h-14 rounded-2xl bg-white border border-brand-border text-primary hover:bg-brand-cream flex items-center justify-center flex-shrink-0 shadow-sm active:scale-95"
+              >
+                <ChevronRight size={18} />
               </button>
             </div>
 
