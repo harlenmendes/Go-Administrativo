@@ -53,8 +53,8 @@ export function Dashboard() {
           </div>
 
           <p className="text-primary-200 font-medium mb-1 text-sm">{saudacao},</p>
-          <h1 className="font-editorial text-3xl sm:text-4xl font-medium tracking-tight mb-6">
-            Dr(a). <em className="italic text-secondary-300">{userName}</em>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-6">
+            Dr(a). <span className="text-secondary-300">{userName}</span>
           </h1>
 
           {/* Métricas Principais */}

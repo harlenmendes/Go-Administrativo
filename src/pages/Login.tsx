@@ -71,11 +71,11 @@ export function Login() {
               }}
             />
           </div>
-          <p className="text-[11px] font-medium tracking-[0.22em] uppercase text-secondary-300 mb-1">
+          <p className="text-[11px] font-semibold tracking-[0.2em] uppercase text-secondary-300 mb-1.5">
             Portal Interno
           </p>
-          <h1 className="font-editorial text-4xl font-medium text-white tracking-tight">
-            Go <em className="italic text-secondary-300">Administrativo</em>
+          <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight">
+            Go <span className="text-secondary-300">Administrativo</span>
           </h1>
           <p className="text-primary-100/80 text-sm mt-1">
             Gestão Clínica &amp; Fechamento de Atendimentos
@@ -86,7 +86,7 @@ export function Login() {
         <div className="bg-white rounded-3xl p-7 shadow-card-hover border border-brand-border">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="font-editorial text-2xl font-semibold text-primary">
+              <h2 className="text-xl font-bold text-primary tracking-tight">
                 {isSignUp ? 'Criar nova conta' : 'Acesse sua conta'}
               </h2>
               <p className="text-xs text-brand-muted mt-0.5">

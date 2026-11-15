@@ -643,8 +643,8 @@ export function Fechamento() {
 
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div>
-              <h1 className="font-editorial text-3xl sm:text-4xl font-medium tracking-tight">
-                Fechamento de <em className="italic text-secondary-300">Atendimentos</em>
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
+                Fechamento de <span className="text-secondary-300">Atendimentos</span>
               </h1>
               <p className="text-primary-100/85 text-sm mt-1">
                 Importe eventos do Google Calendar, confira valores e gere a planilha no Google Sheets.

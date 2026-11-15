@@ -37,7 +37,7 @@ export function GoLogo({ variant = 'dark', size = 'md', subtitle }: GoLogoProps)
       <div className="min-w-0">
         <div className="flex items-baseline gap-1.5">
           <span
-            className={`font-editorial font-semibold tracking-tight leading-none ${titleSizes[size]} ${
+            className={`font-bold tracking-tight leading-none ${titleSizes[size]} ${
               isLight ? 'text-white' : 'text-primary'
             }`}
           >

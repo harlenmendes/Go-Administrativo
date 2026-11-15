@@ -63,8 +63,8 @@ export function Hub() {
                 Portal de Gestão Integrada
               </p>
 
-              <h1 className="font-editorial text-3xl sm:text-4xl md:text-5xl font-medium tracking-tight leading-tight">
-                {saudacao}, <em className="italic text-secondary-300">Dr(a). {userName}</em>
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight leading-tight">
+                {saudacao}, <span className="text-secondary-300">Dr(a). {userName}</span>
               </h1>
               <p className="text-primary-100/85 text-sm sm:text-base mt-2 max-w-xl">
                 Escolha abaixo se deseja acompanhar a evolução clínica dos seus pacientes ou realizar o fechamento mensal dos atendimentos.
@@ -117,7 +117,7 @@ export function Hub() {
                 </span>
               </div>
 
-              <h2 className="font-editorial text-2xl sm:text-3xl font-semibold text-primary mb-2">
+              <h2 className="text-xl sm:text-2xl font-bold text-primary tracking-tight mb-2">
                 Acompanhar Paciente
               </h2>
               <p className="text-sm text-brand-body leading-relaxed">
@@ -187,7 +187,7 @@ export function Hub() {
                 )}
               </div>
 
-              <h2 className="font-editorial text-2xl sm:text-3xl font-semibold text-primary mb-2">
+              <h2 className="text-xl sm:text-2xl font-bold text-primary tracking-tight mb-2">
                 Fazer Fechamento
               </h2>
               <p className="text-sm text-brand-body leading-relaxed">
