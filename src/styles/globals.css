@@ -1,0 +1,189 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --primary: #1B3A4B;
+    --primary-dark: #132832;
+    --primary-light: #2D5A6E;
+    --secondary: #7BA393;
+    --secondary-dark: #5D8A78;
+    --secondary-light: #9DBFB1;
+    --background: #F5F7F6;
+    --surface: #FFFFFF;
+    --border: #E8EDEB;
+    --text-primary: #1B3A4B;
+    --text-secondary: #4A5C54;
+    --text-muted: #6B7D75;
+    --danger: #EF4444;
+    --warning: #F59E0B;
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--background);
+    color: var(--text-primary);
+    line-height: 1.6;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: var(--secondary);
+    color: #FFFFFF;
+  }
+
+  #root {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #D1DBD6;
+    border-radius: 100px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #A3B5AD;
+  }
+}
+
+@layer components {
+  .font-editorial {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+  }
+
+  /* Card base */
+  .card {
+    @apply bg-white rounded-2xl shadow-card border border-brand-border;
+  }
+  .card-hover {
+    @apply card transition-all duration-200 hover:shadow-card-hover hover:-translate-y-0.5 cursor-pointer;
+  }
+
+  /* Botão primário (Sage Green da Go Fisioterapia) */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl
+           bg-secondary-600 text-white font-medium text-sm tracking-wide
+           transition-all duration-200 active:scale-95
+           hover:bg-secondary-700 shadow-sm hover:shadow-md
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Botão secundário (Azul Petróleo Profundo da Go Fisioterapia) */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl
+           bg-primary text-white font-medium text-sm tracking-wide
+           transition-all duration-200 active:scale-95
+           hover:bg-primary-800 shadow-sm hover:shadow-md
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Botão outline */
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl
+           border border-primary/25 text-primary font-medium text-sm
+           bg-white transition-all duration-200 active:scale-95
+           hover:bg-primary hover:text-white hover:border-primary
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Badge de efeito clínico */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold;
+  }
+  .badge-melhora-importante {
+    @apply badge bg-secondary-50 text-secondary-700 border border-secondary-200;
+  }
+  .badge-melhora-moderada {
+    @apply badge bg-emerald-50 text-emerald-700 border border-emerald-200;
+  }
+  .badge-melhora-pequena {
+    @apply badge bg-lime-50 text-lime-700 border border-lime-200;
+  }
+  .badge-sem-mudanca {
+    @apply badge bg-slate-100 text-slate-600 border border-slate-200;
+  }
+  .badge-piora {
+    @apply badge bg-red-50 text-red-600 border border-red-200;
+  }
+
+  /* Input base */
+  .input-base {
+    @apply w-full px-4 py-3 rounded-xl border border-[#D1DBD6]
+           text-sm text-primary placeholder:text-[#A3B5AD]
+           bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30
+           focus:border-secondary transition-all duration-150;
+  }
+
+  /* Label */
+  .label-base {
+    @apply block text-sm font-medium text-primary mb-1.5;
+  }
+
+  /* Section title */
+  .section-title {
+    @apply text-base font-semibold text-primary;
+  }
+
+  /* Bottom nav height (with safe area) */
+  .bottom-nav-h {
+    height: calc(66px + var(--safe-area-bottom));
+    padding-bottom: var(--safe-area-bottom);
+  }
+
+  /* Page padding for bottom nav on mobile */
+  .page-pb {
+    padding-bottom: calc(84px + var(--safe-area-bottom));
+  }
+}
+
+@media (min-width: 768px) {
+  .page-pb {
+    padding-bottom: 40px;
+  }
+}
+
+/* Animações globais */
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out both;
+}
+.animate-slide-up {
+  animation: slideUp 0.35s ease-out both;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slideUp {
+  from { transform: translateY(10px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* Dor slider visual */
+.dor-slider-track {
+  background: linear-gradient(to right, #7BA393, #F59E0B, #EF4444);
+  height: 6px;
+  border-radius: 100px;
+}

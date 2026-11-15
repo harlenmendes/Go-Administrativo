@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/oauth2/authorization/google",
+      "destination": "/api/index.js?__path=/oauth2/authorization/google&route=oauth-login"
+    },
+    {
+      "source": "/login/oauth2/code/google",
+      "destination": "/api/index.js?__path=/login/oauth2/code/google&route=oauth-callback"
+    },
+    {
+      "source": "/logout",
+      "destination": "/api/index.js?__path=/logout&route=logout"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/api/index.js?__path=/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
+
