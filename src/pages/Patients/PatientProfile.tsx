@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  Phone, Activity, Plus, Download, FileText, MapPin
+  Phone, Activity, Plus, Download, FileText, MapPin, PackageCheck
 } from 'lucide-react'
 import { calcularIdade, formatarData, obterIniciaisNome } from '@/lib/utils'
 import { exportarProntuarioParaPDF } from '@/lib/exportPdf'
@@ -81,19 +81,29 @@ export function PatientProfile() {
         subtitle="Prontuário do Paciente"
         showBack
         rightSlot={
-          <button
-            id="btn-exportar-pdf"
-            onClick={handleExportPDF}
-            disabled={isExporting}
-            className="btn-outline py-2.5 px-4 text-xs"
-          >
-            {isExporting ? (
-              <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Download size={15} strokeWidth={2.2} />
-            )}
-            Exportar PDF
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => navigate(`/pacotes?tab=relatorio&paciente=${paciente.id}`)}
+              className="btn-outline py-2.5 px-3.5 text-xs"
+            >
+              <PackageCheck size={15} strokeWidth={2.2} />
+              Pacotes
+            </button>
+            <button
+              id="btn-exportar-pdf"
+              onClick={handleExportPDF}
+              disabled={isExporting}
+              className="btn-outline py-2.5 px-4 text-xs"
+            >
+              {isExporting ? (
+                <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Download size={15} strokeWidth={2.2} />
+              )}
+              PDF
+            </button>
+          </div>
         }
       />
 

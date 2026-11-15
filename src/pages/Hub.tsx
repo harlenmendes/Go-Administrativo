@@ -264,16 +264,25 @@ export function Hub() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-dashed border-brand-border bg-white/60 p-6 flex items-center justify-center sm:justify-start gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-brand-cream text-brand-muted flex items-center justify-center flex-shrink-0">
-              <PackageCheck size={22} strokeWidth={1.8} />
+          <div
+            onClick={() => navigate('/pacotes')}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && navigate('/pacotes')}
+            className="group rounded-3xl border border-brand-border bg-white shadow-card hover:shadow-card-hover hover:border-secondary-300 transition-all cursor-pointer p-6 flex items-center justify-between gap-4"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-primary-50 text-primary flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+                <PackageCheck size={22} strokeWidth={1.9} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-primary">Controle de Pacotes</h3>
+                <p className="text-xs text-brand-muted mt-0.5">
+                  Saldo de sessões, vínculos na agenda e relatórios.
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-primary">Controle de Pacotes</h3>
-              <p className="text-xs text-brand-muted mt-0.5">
-                Saldo de sessões contratadas e realizadas.
-              </p>
-            </div>
+            <ArrowRight size={17} className="text-primary group-hover:translate-x-1 transition-transform flex-shrink-0" />
           </div>
         </div>
       </section>

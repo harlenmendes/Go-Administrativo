@@ -4,6 +4,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import { Hub } from '@/pages/Hub'
 import { Dashboard } from '@/pages/Dashboard'
 import { Fechamento } from '@/pages/Fechamento'
+import { Pacotes } from '@/pages/Pacotes'
 import { PatientList } from '@/pages/Patients/PatientList'
 import { PatientProfile } from '@/pages/Patients/PatientProfile'
 import { NewPatient } from '@/pages/Patients/NewPatient'
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="/nova-avaliacao" element={<NovaAvaliacao />} />
         <Route path="/nova-evolucao" element={<NovaEvolucao />} />
         <Route path="/fechamento" element={<Fechamento />} />
+        <Route path="/pacotes" element={<Pacotes />} />
         <Route path="/configuracoes" element={<Settings />} />
         <Route
           path="*"

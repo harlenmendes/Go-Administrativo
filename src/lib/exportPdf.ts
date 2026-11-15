@@ -1,7 +1,11 @@
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 
-export const exportarProntuarioParaPDF = async (elementId: string, nomePaciente: string) => {
+export const exportarProntuarioParaPDF = async (
+  elementId: string,
+  nomePaciente: string,
+  filePrefix = 'Prontuario'
+) => {
   try {
     const element = document.getElementById(elementId)
     if (!element) {
@@ -54,7 +58,7 @@ export const exportarProntuarioParaPDF = async (elementId: string, nomePaciente:
 
     // Nomeia o arquivo com o nome do paciente e data atual
     const dataAtual = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')
-    const nomeArquivo = `Prontuario_${nomePaciente.replace(/\s+/g, '_')}_${dataAtual}.pdf`
+    const nomeArquivo = `${filePrefix}_${nomePaciente.replace(/\s+/g, '_')}_${dataAtual}.pdf`
 
     // Dispara o download
     pdf.save(nomeArquivo)

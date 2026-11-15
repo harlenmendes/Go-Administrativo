@@ -173,15 +173,16 @@ async function verifySupabaseAuth(req) {
     }
 }
 
-async function supabaseRequest(table, { method = 'GET', query = '', body = null, prefer = '' } = {}) {
+async function supabaseRequest(table, { method = 'GET', query = '', body = null, prefer = '', schema = null } = {}) {
     const cfg = getSupabaseConfig();
     if (!cfg) return null;
 
+    const targetSchema = schema || cfg.schema;
     const headers = {
         'apikey': cfg.key,
         'Content-Type': 'application/json',
-        'Accept-Profile': cfg.schema,
-        'Content-Profile': cfg.schema
+        'Accept-Profile': targetSchema,
+        'Content-Profile': targetSchema
     };
     if (!cfg.key.startsWith('sb_')) {
         headers['Authorization'] = `Bearer ${cfg.key}`;
@@ -342,6 +343,315 @@ async function fetchAtendimentosFromGoogle(accessToken, meses) {
 
     result.sort((a, b) => a.name.localeCompare(b.name));
     return result;
+}
+
+function getSaoPauloTodayStr() {
+    const parts = new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).formatToParts(new Date());
+    const map = {};
+    for (const p of parts) map[p.type] = p.value;
+    return `${map.year}-${map.month}-${map.day}`;
+}
+
+function shiftMonth(monthStr, delta) {
+    const [yStr, mStr] = monthStr.split('-');
+    let year = parseInt(yStr, 10);
+    let month = parseInt(mStr, 10) + delta;
+    while (month < 1) {
+        month += 12;
+        year -= 1;
+    }
+    while (month > 12) {
+        month -= 12;
+        year += 1;
+    }
+    return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+function getThreeMonthWindow(baseMonthStr) {
+    const currentMonth = baseMonthStr && /^\d{4}-\d{2}$/.test(baseMonthStr)
+        ? baseMonthStr
+        : getSaoPauloTodayStr().slice(0, 7);
+    const prevMonth = shiftMonth(currentMonth, -1);
+    const nextMonth = shiftMonth(currentMonth, 1);
+    const [ny, nm] = nextMonth.split('-').map(Number);
+    const lastDay = getLastDayOfMonth(ny, nm);
+    return {
+        prevMonth,
+        currentMonth,
+        nextMonth,
+        months: [prevMonth, currentMonth, nextMonth],
+        startDate: `${prevMonth}-01`,
+        endDate: `${nextMonth}-${String(lastDay).padStart(2, '0')}`
+    };
+}
+
+function normalizeCalendarName(summary) {
+    const raw = summary.trim().substring(1).trim();
+    if (!raw) return '';
+    return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+}
+
+function extractTimeInSaoPaulo(eventStart) {
+    if (!eventStart || !eventStart.dateTime) return 'Dia inteiro';
+    const parts = new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    }).formatToParts(new Date(eventStart.dateTime));
+    const map = {};
+    for (const p of parts) map[p.type] = p.value;
+    return `${map.hour}:${map.minute}`;
+}
+
+async function fetchDetailedEventsFromGoogle(accessToken, startDate, endDate) {
+    const timeMin = `${startDate}T00:00:00-03:00`;
+    const timeMax = `${endDate}T23:59:59-03:00`;
+    const events = [];
+
+    let pageToken = '';
+    do {
+        const params = new URLSearchParams({
+            timeMin,
+            timeMax,
+            orderBy: 'startTime',
+            singleEvents: 'true',
+            maxResults: '2500'
+        });
+        if (pageToken) params.set('pageToken', pageToken);
+
+        const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params.toString()}`;
+        const response = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Falha na API do Google Calendar (${response.status}): ${errText}`);
+        }
+
+        const data = await response.json();
+        const items = data.items || [];
+
+        for (const event of items) {
+            if (event.status === 'cancelled') continue;
+            const summary = event.summary;
+            if (!summary || !summary.trim().startsWith('#')) continue;
+            const calendarName = normalizeCalendarName(summary);
+            if (!calendarName) continue;
+
+            const formattedDate = formatEventDateInSaoPaulo(event.start);
+            if (!formattedDate) continue;
+            const [isoDate, displayDate, weekday] = formattedDate.split('|');
+
+            events.push({
+                eventId: event.id,
+                date: isoDate,
+                displayDate,
+                weekday,
+                startTime: extractTimeInSaoPaulo(event.start),
+                eventDatetime: event.start?.dateTime || `${isoDate}T12:00:00-03:00`,
+                monthKey: isoDate.slice(0, 7),
+                rawSummary: summary.trim(),
+                calendarName
+            });
+        }
+
+        pageToken = data.nextPageToken || '';
+    } while (pageToken);
+
+    events.sort((a, b) => a.eventDatetime.localeCompare(b.eventDatetime));
+    return events;
+}
+
+async function recalculatePackageStatuses(pacienteId = null) {
+    const cfg = getSupabaseConfig();
+    if (!cfg) return;
+
+    const pkgQuery = pacienteId
+        ? `select=id,total_sessions,initial_offset,status&paciente_id=eq.${encodeURIComponent(pacienteId)}`
+        : 'select=id,total_sessions,initial_offset,status';
+
+    const pkgs = (await supabaseRequest('packages', { query: pkgQuery })) || [];
+    if (pkgs.length === 0) return;
+
+    const pkgIds = pkgs.map(p => p.id);
+    const sessions = (await supabaseRequest('package_sessions', {
+        query: `select=id,package_id&package_id=in.(${pkgIds.map(encodeURIComponent).join(',')})`
+    })) || [];
+
+    const countByPkg = {};
+    for (const s of sessions) {
+        countByPkg[s.package_id] = (countByPkg[s.package_id] || 0) + 1;
+    }
+
+    for (const pkg of pkgs) {
+        if (pkg.status === 'cancelled') continue;
+        const used = (pkg.initial_offset || 0) + (countByPkg[pkg.id] || 0);
+        const expected = used >= pkg.total_sessions ? 'completed' : 'active';
+        if (pkg.status !== expected) {
+            await supabaseRequest('packages', {
+                method: 'PATCH',
+                query: `id=eq.${encodeURIComponent(pkg.id)}`,
+                body: { status: expected, updated_at: new Date().toISOString() }
+            });
+        }
+    }
+}
+
+async function syncAndDistributePackages(calendarEvents, windowStart, windowEnd) {
+    const [linksRaw, mappingsRaw, packagesRaw, sessionsRaw, exclusionsRaw] = await Promise.all([
+        supabaseRequest('patient_calendar_links', { query: 'select=*' }).catch(() => []),
+        supabaseRequest('patient_name_mappings', { query: 'select=month_key,old_name,new_name' }).catch(() => []),
+        supabaseRequest('packages', { query: 'select=*&order=start_date.asc.nullslast,created_at.asc' }).catch(() => []),
+        supabaseRequest('package_sessions', { query: 'select=*&order=event_date.asc,event_datetime.asc' }).catch(() => []),
+        supabaseRequest('package_session_exclusions', { query: 'select=*' }).catch(() => [])
+    ]);
+
+    const links = linksRaw || [];
+    const mappings = mappingsRaw || [];
+    let packages = packagesRaw || [];
+    let sessions = sessionsRaw || [];
+    const exclusions = exclusionsRaw || [];
+
+    // 1. Reconciliar alterações da agenda dentro da janela consultada
+    if (Array.isArray(calendarEvents) && windowStart && windowEnd) {
+        const eventById = new Map(calendarEvents.map(e => [e.eventId, e]));
+        let changed = false;
+
+        for (const s of sessions) {
+            if (s.event_date >= windowStart && s.event_date <= windowEnd) {
+                const live = eventById.get(s.calendar_event_id);
+                if (!live) {
+                    // Evento foi apagado ou desmarcado no Google Calendar
+                    await supabaseRequest('package_sessions', {
+                        method: 'DELETE',
+                        query: `id=eq.${encodeURIComponent(s.id)}`
+                    });
+                    changed = true;
+                } else if (
+                    live.date !== s.event_date ||
+                    live.rawSummary !== s.calendar_summary
+                ) {
+                    await supabaseRequest('package_sessions', {
+                        method: 'PATCH',
+                        query: `id=eq.${encodeURIComponent(s.id)}`,
+                        body: {
+                            event_date: live.date,
+                            event_datetime: live.eventDatetime,
+                            calendar_summary: live.rawSummary,
+                            calendar_name: live.calendarName
+                        }
+                    });
+                    changed = true;
+                }
+            }
+        }
+
+        if (changed) {
+            sessions = (await supabaseRequest('package_sessions', {
+                query: 'select=*&order=event_date.asc,event_datetime.asc'
+            })) || [];
+        }
+    }
+
+    // 2. Mapear nomes da agenda + agrupamentos -> paciente_id
+    const linkByLower = {};
+    for (const l of links) {
+        linkByLower[l.calendar_name.toLowerCase().trim()] = l.paciente_id;
+    }
+
+    const mappingByMonth = {};
+    const fallbackMapping = {};
+    for (const m of mappings) {
+        if (!mappingByMonth[m.month_key]) mappingByMonth[m.month_key] = {};
+        const oldLow = m.old_name.toLowerCase().trim();
+        mappingByMonth[m.month_key][oldLow] = m.new_name;
+        fallbackMapping[oldLow] = m.new_name;
+    }
+
+    const resolvePacienteId = (calendarName, monthKey) => {
+        const low = calendarName.toLowerCase().trim();
+        if (linkByLower[low]) return linkByLower[low];
+        const mapped = mappingByMonth[monthKey]?.[low] || fallbackMapping[low];
+        if (mapped) {
+            const mappedLow = mapped.toLowerCase().trim();
+            if (linkByLower[mappedLow]) return linkByLower[mappedLow];
+        }
+        return null;
+    };
+
+    // 3. Auto-distribuir novos atendimentos elegíveis para pacotes com start_date definido
+    if (Array.isArray(calendarEvents) && calendarEvents.length > 0) {
+        const assignedEventIds = new Set(sessions.map(s => s.calendar_event_id));
+        const excludedEventIds = new Set(exclusions.map(x => x.calendar_event_id));
+
+        const countByPkg = {};
+        for (const s of sessions) {
+            countByPkg[s.package_id] = (countByPkg[s.package_id] || 0) + 1;
+        }
+
+        const usedByPkg = {};
+        const packagesByPaciente = {};
+        for (const pkg of packages) {
+            usedByPkg[pkg.id] = (pkg.initial_offset || 0) + (countByPkg[pkg.id] || 0);
+            if (!packagesByPaciente[pkg.paciente_id]) packagesByPaciente[pkg.paciente_id] = [];
+            packagesByPaciente[pkg.paciente_id].push(pkg);
+        }
+
+        const rowsToInsert = [];
+        for (const ev of calendarEvents) {
+            if (assignedEventIds.has(ev.eventId) || excludedEventIds.has(ev.eventId)) continue;
+            const pacienteId = resolvePacienteId(ev.calendarName, ev.monthKey);
+            if (!pacienteId) continue;
+
+            const candidatePkgs = packagesByPaciente[pacienteId] || [];
+            const targetPkg = candidatePkgs.find(pkg =>
+                pkg.status !== 'cancelled' &&
+                pkg.start_date &&
+                ev.date >= pkg.start_date &&
+                (usedByPkg[pkg.id] || 0) < pkg.total_sessions
+            );
+
+            if (targetPkg) {
+                rowsToInsert.push({
+                    package_id: targetPkg.id,
+                    calendar_event_id: ev.eventId,
+                    event_date: ev.date,
+                    event_datetime: ev.eventDatetime,
+                    calendar_summary: ev.rawSummary,
+                    calendar_name: ev.calendarName
+                });
+                assignedEventIds.add(ev.eventId);
+                usedByPkg[targetPkg.id] = (usedByPkg[targetPkg.id] || 0) + 1;
+            }
+        }
+
+        if (rowsToInsert.length > 0) {
+            await supabaseRequest('package_sessions', {
+                method: 'POST',
+                query: 'on_conflict=calendar_event_id',
+                prefer: 'resolution=merge-duplicates',
+                body: rowsToInsert
+            });
+            sessions = (await supabaseRequest('package_sessions', {
+                query: 'select=*&order=event_date.asc,event_datetime.asc'
+            })) || [];
+        }
+    }
+
+    // 4. Recalcular status dos pacotes (active vs completed)
+    await recalculatePackageStatuses();
+    packages = (await supabaseRequest('packages', {
+        query: 'select=*&order=start_date.asc.nullslast,created_at.desc'
+    })) || [];
+
+    return { links, mappings, packages, sessions, exclusions };
 }
 
 function generateTitle(meses) {
@@ -1410,6 +1720,368 @@ module.exports = async function handler(req, res) {
             const patients = Array.isArray(req.body) ? req.body : [];
             const url = await exportToSheetsOnGoogle(session.accessToken, monthList, patients);
             return res.status(200).json({ url });
+        }
+
+        // --------------------------------------------------------------------
+        // D. CONTROLE DE PACOTES & VÍNCULO DE AGENDA (1 PARA N)
+        // --------------------------------------------------------------------
+        // GET /api/pacotes/overview?baseMonth=YYYY-MM
+        if (pathname === '/api/pacotes/overview' && method === 'GET') {
+            const baseMonth = parsedUrl.searchParams.get('baseMonth') || '';
+            const win = getThreeMonthWindow(baseMonth);
+            const today = getSaoPauloTodayStr();
+
+            let calendarEvents = [];
+            let googleConnected = Boolean(session && session.accessToken);
+            let googleError = null;
+
+            if (googleConnected) {
+                try {
+                    calendarEvents = await fetchDetailedEventsFromGoogle(
+                        session.accessToken,
+                        win.startDate,
+                        win.endDate
+                    );
+                } catch (err) {
+                    console.error('Erro ao ler agenda para pacotes:', err);
+                    googleError = err.message;
+                }
+            }
+
+            const state = await syncAndDistributePackages(
+                googleConnected && !googleError ? calendarEvents : null,
+                win.startDate,
+                win.endDate
+            );
+
+            return res.status(200).json({
+                today,
+                window: win,
+                googleConnected,
+                googleError,
+                events: calendarEvents,
+                ...state
+            });
+        }
+
+        // POST /api/pacotes/links  { paciente_id, calendar_names: string[] }
+        if (pathname === '/api/pacotes/links' && method === 'POST') {
+            const body = req.body || {};
+            const pacienteId = (body.paciente_id || '').trim();
+            const rawNames = Array.isArray(body.calendar_names)
+                ? body.calendar_names
+                : body.calendar_name
+                    ? [body.calendar_name]
+                    : [];
+
+            const cleanNames = Array.from(
+                new Set(rawNames.map(n => String(n || '').trim()).filter(Boolean))
+            );
+
+            if (!pacienteId || cleanNames.length === 0) {
+                return res.status(400).send('paciente_id e calendar_names são obrigatórios.');
+            }
+
+            const rows = cleanNames.map(calendar_name => ({
+                paciente_id: pacienteId,
+                calendar_name
+            }));
+
+            const inserted = await supabaseRequest('patient_calendar_links', {
+                method: 'POST',
+                query: 'on_conflict=calendar_name',
+                prefer: 'resolution=merge-duplicates,return=representation',
+                body: rows
+            });
+
+            return res.status(200).json({ ok: true, links: inserted || [] });
+        }
+
+        // DELETE /api/pacotes/links/:id
+        if (pathname.startsWith('/api/pacotes/links/') && method === 'DELETE') {
+            const linkId = decodeURIComponent(pathname.replace('/api/pacotes/links/', '')).trim();
+            if (linkId) {
+                await supabaseRequest('patient_calendar_links', {
+                    method: 'DELETE',
+                    query: `id=eq.${encodeURIComponent(linkId)}`
+                });
+            }
+            return res.status(200).json({ ok: true });
+        }
+
+        // POST /api/pacotes  (cria pacote e opcionalmente já anexa sessões selecionadas)
+        if (pathname === '/api/pacotes' && method === 'POST') {
+            const body = req.body || {};
+            const pacienteId = (body.paciente_id || '').trim();
+            const packageType = (body.package_type || '10').trim();
+            const totalSessions = parseInt(body.total_sessions, 10);
+            const sessionPrice = Number(body.session_price || 0);
+            const startDate = body.start_date ? String(body.start_date).trim() : null;
+            const initialOffset = Math.max(0, parseInt(body.initial_offset || 0, 10) || 0);
+            const label = body.label ? String(body.label).trim() : null;
+            const notes = body.notes ? String(body.notes).trim() : null;
+            const isPaid = Boolean(body.is_paid);
+            const attachEvents = Array.isArray(body.attach_events) ? body.attach_events : [];
+
+            if (!pacienteId || !totalSessions || totalSessions <= 0) {
+                return res.status(400).send('Paciente e quantidade total de sessões são obrigatórios.');
+            }
+
+            const initialStatus = initialOffset + attachEvents.length >= totalSessions ? 'completed' : 'active';
+
+            const createdArr = await supabaseRequest('packages', {
+                method: 'POST',
+                prefer: 'return=representation',
+                body: [{
+                    paciente_id: pacienteId,
+                    package_type: packageType,
+                    label,
+                    total_sessions: totalSessions,
+                    session_price: isNaN(sessionPrice) ? 0 : sessionPrice,
+                    start_date: startDate || null,
+                    initial_offset: initialOffset,
+                    status: initialStatus,
+                    is_paid: isPaid,
+                    notes
+                }]
+            });
+
+            const createdPkg = Array.isArray(createdArr) ? createdArr[0] : createdArr;
+            if (!createdPkg) {
+                return res.status(500).send('Falha ao criar pacote no banco de dados.');
+            }
+
+            if (attachEvents.length > 0) {
+                for (const ev of attachEvents) {
+                    if (ev.eventId) {
+                        await supabaseRequest('package_session_exclusions', {
+                            method: 'DELETE',
+                            query: `calendar_event_id=eq.${encodeURIComponent(ev.eventId)}`
+                        }).catch(() => {});
+                    }
+                }
+
+                const sessionRows = attachEvents
+                    .filter(ev => ev.eventId && ev.date)
+                    .map(ev => ({
+                        package_id: createdPkg.id,
+                        calendar_event_id: ev.eventId,
+                        event_date: ev.date,
+                        event_datetime: ev.eventDatetime || `${ev.date}T12:00:00-03:00`,
+                        calendar_summary: ev.rawSummary || `#${ev.calendarName || 'Atendimento'}`,
+                        calendar_name: ev.calendarName || ''
+                    }));
+
+                if (sessionRows.length > 0) {
+                    await supabaseRequest('package_sessions', {
+                        method: 'POST',
+                        query: 'on_conflict=calendar_event_id',
+                        prefer: 'resolution=merge-duplicates',
+                        body: sessionRows
+                    });
+                }
+            }
+
+            await recalculatePackageStatuses(pacienteId);
+            return res.status(200).json({ ok: true, package: createdPkg });
+        }
+
+        // PATCH /api/pacotes/:id
+        if (pathname.startsWith('/api/pacotes/') && !pathname.includes('/sessions/') && !pathname.includes('/links/') && method === 'PATCH') {
+            const pkgId = decodeURIComponent(pathname.replace('/api/pacotes/', '')).trim();
+            const body = req.body || {};
+            if (!pkgId) return res.status(400).send('ID do pacote é obrigatório.');
+
+            const existingArr = await supabaseRequest('packages', {
+                query: `select=*&id=eq.${encodeURIComponent(pkgId)}`
+            });
+            const existing = existingArr && existingArr[0];
+            if (!existing) return res.status(404).send('Pacote não encontrado.');
+
+            const updates = { updated_at: new Date().toISOString() };
+            if (body.package_type !== undefined) updates.package_type = body.package_type;
+            if (body.label !== undefined) updates.label = body.label || null;
+            if (body.total_sessions !== undefined) updates.total_sessions = Math.max(1, parseInt(body.total_sessions, 10) || 1);
+            if (body.session_price !== undefined) updates.session_price = Number(body.session_price) || 0;
+            if (body.start_date !== undefined) updates.start_date = body.start_date ? String(body.start_date).trim() : null;
+            if (body.initial_offset !== undefined) updates.initial_offset = Math.max(0, parseInt(body.initial_offset, 10) || 0);
+            if (body.is_paid !== undefined) updates.is_paid = Boolean(body.is_paid);
+            if (body.notes !== undefined) updates.notes = body.notes || null;
+            if (body.status !== undefined) updates.status = body.status;
+
+            // Se mudou start_date para frente, remove sessões vinculadas anteriores à nova data
+            if (updates.start_date && updates.start_date !== existing.start_date) {
+                await supabaseRequest('package_sessions', {
+                    method: 'DELETE',
+                    query: `package_id=eq.${encodeURIComponent(pkgId)}&event_date=lt.${encodeURIComponent(updates.start_date)}`
+                }).catch(() => {});
+            }
+
+            await supabaseRequest('packages', {
+                method: 'PATCH',
+                query: `id=eq.${encodeURIComponent(pkgId)}`,
+                body: updates
+            });
+
+            await recalculatePackageStatuses(existing.paciente_id);
+            return res.status(200).json({ ok: true });
+        }
+
+        // DELETE /api/pacotes/:id
+        if (pathname.startsWith('/api/pacotes/') && !pathname.includes('/sessions/') && !pathname.includes('/links/') && method === 'DELETE') {
+            const pkgId = decodeURIComponent(pathname.replace('/api/pacotes/', '')).trim();
+            if (pkgId) {
+                await supabaseRequest('packages', {
+                    method: 'DELETE',
+                    query: `id=eq.${encodeURIComponent(pkgId)}`
+                });
+            }
+            return res.status(200).json({ ok: true });
+        }
+
+        // POST /api/pacotes/sessions/assign  { package_id, event }
+        if (pathname === '/api/pacotes/sessions/assign' && method === 'POST') {
+            const body = req.body || {};
+            const packageId = (body.package_id || '').trim();
+            const ev = body.event;
+            if (!packageId || !ev || !ev.eventId || !ev.date) {
+                return res.status(400).send('package_id e event válido são obrigatórios.');
+            }
+
+            const pkgArr = await supabaseRequest('packages', {
+                query: `select=id,paciente_id&id=eq.${encodeURIComponent(packageId)}`
+            });
+            const pkg = pkgArr && pkgArr[0];
+            if (!pkg) return res.status(404).send('Pacote não encontrado.');
+
+            // Remove de exclusões caso estivesse marcado como pendente ou ignorado
+            await supabaseRequest('package_session_exclusions', {
+                method: 'DELETE',
+                query: `calendar_event_id=eq.${encodeURIComponent(ev.eventId)}`
+            }).catch(() => {});
+
+            await supabaseRequest('package_sessions', {
+                method: 'POST',
+                query: 'on_conflict=calendar_event_id',
+                prefer: 'resolution=merge-duplicates',
+                body: [{
+                    package_id: packageId,
+                    calendar_event_id: ev.eventId,
+                    event_date: ev.date,
+                    event_datetime: ev.eventDatetime || `${ev.date}T12:00:00-03:00`,
+                    calendar_summary: ev.rawSummary || `#${ev.calendarName || ''}`,
+                    calendar_name: ev.calendarName || ''
+                }]
+            });
+
+            await recalculatePackageStatuses(pkg.paciente_id);
+            return res.status(200).json({ ok: true });
+        }
+
+        // POST /api/pacotes/sessions/detach  (tira sessão do pacote e deixa o dia pendente)
+        if (pathname === '/api/pacotes/sessions/detach' && method === 'POST') {
+            const body = req.body || {};
+            const calendarEventId = (body.calendar_event_id || '').trim();
+            const pacienteId = body.paciente_id ? String(body.paciente_id).trim() : null;
+            const eventDate = body.event_date ? String(body.event_date).trim() : null;
+            const calendarSummary = body.calendar_summary ? String(body.calendar_summary).trim() : null;
+
+            if (!calendarEventId) {
+                return res.status(400).send('calendar_event_id é obrigatório.');
+            }
+
+            await supabaseRequest('package_sessions', {
+                method: 'DELETE',
+                query: `calendar_event_id=eq.${encodeURIComponent(calendarEventId)}`
+            });
+
+            await supabaseRequest('package_session_exclusions', {
+                method: 'POST',
+                query: 'on_conflict=calendar_event_id',
+                prefer: 'resolution=merge-duplicates',
+                body: [{
+                    calendar_event_id: calendarEventId,
+                    paciente_id: pacienteId,
+                    event_date: eventDate,
+                    calendar_summary: calendarSummary,
+                    status: 'pending',
+                    reason: 'removed_from_package'
+                }]
+            });
+
+            await recalculatePackageStatuses(pacienteId);
+            return res.status(200).json({ ok: true });
+        }
+
+        // POST /api/pacotes/sessions/move  { calendar_event_id, target_package_id }
+        if (pathname === '/api/pacotes/sessions/move' && method === 'POST') {
+            const body = req.body || {};
+            const calendarEventId = (body.calendar_event_id || '').trim();
+            const targetPackageId = (body.target_package_id || '').trim();
+            if (!calendarEventId || !targetPackageId) {
+                return res.status(400).send('calendar_event_id e target_package_id são obrigatórios.');
+            }
+
+            const pkgArr = await supabaseRequest('packages', {
+                query: `select=id,paciente_id&id=eq.${encodeURIComponent(targetPackageId)}`
+            });
+            const targetPkg = pkgArr && pkgArr[0];
+            if (!targetPkg) return res.status(404).send('Pacote de destino não encontrado.');
+
+            await supabaseRequest('package_session_exclusions', {
+                method: 'DELETE',
+                query: `calendar_event_id=eq.${encodeURIComponent(calendarEventId)}`
+            }).catch(() => {});
+
+            await supabaseRequest('package_sessions', {
+                method: 'PATCH',
+                query: `calendar_event_id=eq.${encodeURIComponent(calendarEventId)}`,
+                body: { package_id: targetPackageId }
+            });
+
+            await recalculatePackageStatuses(targetPkg.paciente_id);
+            return res.status(200).json({ ok: true });
+        }
+
+        // POST /api/pacotes/sessions/ignore
+        if (pathname === '/api/pacotes/sessions/ignore' && method === 'POST') {
+            const body = req.body || {};
+            const calendarEventId = (body.calendar_event_id || '').trim();
+            if (!calendarEventId) return res.status(400).send('calendar_event_id é obrigatório.');
+
+            await supabaseRequest('package_sessions', {
+                method: 'DELETE',
+                query: `calendar_event_id=eq.${encodeURIComponent(calendarEventId)}`
+            }).catch(() => {});
+
+            await supabaseRequest('package_session_exclusions', {
+                method: 'POST',
+                query: 'on_conflict=calendar_event_id',
+                prefer: 'resolution=merge-duplicates',
+                body: [{
+                    calendar_event_id: calendarEventId,
+                    paciente_id: body.paciente_id || null,
+                    event_date: body.event_date || null,
+                    calendar_summary: body.calendar_summary || null,
+                    status: 'ignored',
+                    reason: body.reason || 'ignored'
+                }]
+            });
+
+            await recalculatePackageStatuses(body.paciente_id || null);
+            return res.status(200).json({ ok: true });
+        }
+
+        // DELETE /api/pacotes/sessions/ignore/:eventId (restaurar atendimento ignorado)
+        if (pathname.startsWith('/api/pacotes/sessions/ignore/') && method === 'DELETE') {
+            const eventId = decodeURIComponent(pathname.replace('/api/pacotes/sessions/ignore/', '')).trim();
+            if (eventId) {
+                await supabaseRequest('package_session_exclusions', {
+                    method: 'DELETE',
+                    query: `calendar_event_id=eq.${encodeURIComponent(eventId)}`
+                });
+            }
+            return res.status(200).json({ ok: true });
         }
 
         return res.status(404).json({ error: `Rota não encontrada: ${method} ${pathname}` });
