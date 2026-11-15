@@ -91,43 +91,100 @@ function isSecureRequest(req) {
     return proto.includes('https') || process.env.NODE_ENV === 'production';
 }
 
+function clearSessionCookie(req, res) {
+    const secure = isSecureRequest(req);
+    res.setHeader('Set-Cookie', serializeCookie(COOKIE_NAME, '', {
+        httpOnly: true,
+        secure,
+        sameSite: 'Lax',
+        path: '/',
+        maxAge: 0
+    }));
+}
+
+function createGoogleApiError(message, status) {
+    const err = new Error(message);
+    err.statusCode = status;
+    err.isGoogleAuthError = status === 401;
+    return err;
+}
+
+async function refreshGoogleSession(req, res, session) {
+    if (!session || !session.refreshToken) return null;
+    try {
+        const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                client_id: process.env.GOOGLE_CLIENT_ID || '',
+                client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
+                refresh_token: session.refreshToken,
+                grant_type: 'refresh_token'
+            }).toString()
+        });
+        if (!tokenRes.ok) {
+            return null;
+        }
+        const tokenData = await tokenRes.json();
+        const updated = {
+            ...session,
+            accessToken: tokenData.access_token,
+            refreshToken: tokenData.refresh_token || session.refreshToken,
+            expiresAt: Date.now() + (tokenData.expires_in || 3600) * 1000
+        };
+        const secure = isSecureRequest(req);
+        res.setHeader('Set-Cookie', serializeCookie(COOKIE_NAME, encryptSession(updated), {
+            httpOnly: true,
+            secure,
+            sameSite: 'Lax',
+            path: '/',
+            maxAge: 60 * 60 * 24 * 30 // 30 dias
+        }));
+        return updated;
+    } catch (e) {
+        console.error('Erro ao renovar token Google:', e);
+        return null;
+    }
+}
+
 async function getValidSession(req, res) {
     const cookies = parseCookies(req);
     const session = decryptSession(cookies[COOKIE_NAME]);
     if (!session || !session.accessToken) return null;
 
-    // Se o token estiver prestes a expirar e tivermos refreshToken, renova automaticamente
-    if (session.expiresAt && Date.now() > session.expiresAt - 60000 && session.refreshToken) {
-        try {
-            const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({
-                    client_id: process.env.GOOGLE_CLIENT_ID || '',
-                    client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
-                    refresh_token: session.refreshToken,
-                    grant_type: 'refresh_token'
-                }).toString()
-            });
-            if (tokenRes.ok) {
-                const tokenData = await tokenRes.json();
-                session.accessToken = tokenData.access_token;
-                session.expiresAt = Date.now() + (tokenData.expires_in || 3600) * 1000;
-                const secure = isSecureRequest(req);
-                res.setHeader('Set-Cookie', serializeCookie(COOKIE_NAME, encryptSession(session), {
-                    httpOnly: true,
-                    secure,
-                    sameSite: 'Lax',
-                    path: '/',
-                    maxAge: 60 * 60 * 24 * 30 // 30 dias
-                }));
-            }
-        } catch (e) {
-            console.error('Erro ao renovar token Google:', e);
+    // Se o token expirou (ou está prestes a expirar), renova com refresh_token ou invalida o cookie
+    if (session.expiresAt && Date.now() > session.expiresAt - 60000) {
+        const refreshed = await refreshGoogleSession(req, res, session);
+        if (!refreshed) {
+            clearSessionCookie(req, res);
+            return null;
         }
+        return refreshed;
     }
 
     return session;
+}
+
+async function runWithGoogleSession(req, res, session, fn) {
+    try {
+        return await fn(session.accessToken);
+    } catch (err) {
+        if (err && err.isGoogleAuthError) {
+            const refreshed = await refreshGoogleSession(req, res, session);
+            if (refreshed) {
+                try {
+                    return await fn(refreshed.accessToken);
+                } catch (retryErr) {
+                    if (retryErr && retryErr.isGoogleAuthError) {
+                        clearSessionCookie(req, res);
+                    }
+                    throw retryErr;
+                }
+            }
+            clearSessionCookie(req, res);
+        }
+        throw err;
+    }
 }
 
 // ============================================================================
@@ -302,7 +359,7 @@ async function fetchAtendimentosFromGoogle(accessToken, meses) {
 
             if (!response.ok) {
                 const errText = await response.text();
-                throw new Error(`Falha na API do Google Calendar (${response.status}): ${errText}`);
+                throw createGoogleApiError(`Falha na API do Google Calendar (${response.status}): ${errText}`, response.status);
             }
 
             const data = await response.json();
@@ -790,7 +847,7 @@ async function exportToSheetsOnGoogle(accessToken, meses, patients) {
 
     if (!createRes.ok) {
         const errText = await createRes.text();
-        throw new Error(`Erro ao criar planilha (${createRes.status}): ${errText}`);
+        throw createGoogleApiError(`Erro ao criar planilha (${createRes.status}): ${errText}`, createRes.status);
     }
 
     const spreadsheet = await createRes.json();
@@ -1371,7 +1428,7 @@ module.exports = async function handler(req, res) {
                 response_type: 'code',
                 scope: 'openid profile email https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/spreadsheets',
                 access_type: 'offline',
-                prompt: 'select_account',
+                prompt: 'select_account consent',
                 state
             });
 
@@ -1718,8 +1775,20 @@ module.exports = async function handler(req, res) {
                 return res.status(400).send('Nenhum mês foi informado.');
             }
 
-            const data = await fetchAtendimentosFromGoogle(session.accessToken, monthList);
-            return res.status(200).json(data);
+            try {
+                const data = await runWithGoogleSession(req, res, session, (token) =>
+                    fetchAtendimentosFromGoogle(token, monthList)
+                );
+                return res.status(200).json(data);
+            } catch (err) {
+                if (err && err.isGoogleAuthError) {
+                    return res.status(401).json({
+                        error: 'Sua conexão com o Google expirou. Conecte novamente.',
+                        code: 'GOOGLE_AUTH_REQUIRED'
+                    });
+                }
+                throw err;
+            }
         }
 
         // POST /api/exportar
@@ -1736,8 +1805,20 @@ module.exports = async function handler(req, res) {
             }
 
             const patients = Array.isArray(req.body) ? req.body : [];
-            const url = await exportToSheetsOnGoogle(session.accessToken, monthList, patients);
-            return res.status(200).json({ url });
+            try {
+                const url = await runWithGoogleSession(req, res, session, (token) =>
+                    exportToSheetsOnGoogle(token, monthList, patients)
+                );
+                return res.status(200).json({ url });
+            } catch (err) {
+                if (err && err.isGoogleAuthError) {
+                    return res.status(401).json({
+                        error: 'Sua conexão com o Google expirou. Conecte novamente.',
+                        code: 'GOOGLE_AUTH_REQUIRED'
+                    });
+                }
+                throw err;
+            }
         }
 
         // --------------------------------------------------------------------
@@ -1755,14 +1836,17 @@ module.exports = async function handler(req, res) {
 
             if (googleConnected) {
                 try {
-                    calendarEvents = await fetchDetailedEventsFromGoogle(
-                        session.accessToken,
-                        win.startDate,
-                        win.endDate
+                    calendarEvents = await runWithGoogleSession(req, res, session, (token) =>
+                        fetchDetailedEventsFromGoogle(token, win.startDate, win.endDate)
                     );
                 } catch (err) {
                     console.error('Erro ao ler agenda para pacotes:', err);
-                    googleError = err.message;
+                    if (err && err.isGoogleAuthError) {
+                        googleConnected = false;
+                        googleError = null;
+                    } else {
+                        googleError = err.message;
+                    }
                 }
             }
 
@@ -2132,16 +2216,25 @@ module.exports = async function handler(req, res) {
                 return res.status(400).json({ error: 'endDate deve ser maior ou igual a startDate.' });
             }
 
-            const googleConnected = Boolean(session && session.accessToken);
+            let googleConnected = Boolean(session && session.accessToken);
+            let googleAuthExpired = false;
             let googleError = null;
             let events = [];
 
             if (googleConnected) {
                 try {
-                    events = await fetchDetailedEventsFromGoogle(session.accessToken, startDate, endDate);
+                    events = await runWithGoogleSession(req, res, session, (token) =>
+                        fetchDetailedEventsFromGoogle(token, startDate, endDate)
+                    );
                 } catch (err) {
                     console.error('Erro ao carregar agenda semanal:', err);
-                    googleError = err.message;
+                    if (err && err.isGoogleAuthError) {
+                        googleConnected = false;
+                        googleAuthExpired = true;
+                        googleError = null;
+                    } else {
+                        googleError = err.message;
+                    }
                 }
             }
 
@@ -2154,6 +2247,7 @@ module.exports = async function handler(req, res) {
                 startDate,
                 endDate,
                 googleConnected,
+                googleAuthExpired,
                 googleError,
                 events,
                 mappings: mappings || []

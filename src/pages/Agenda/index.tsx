@@ -46,6 +46,7 @@ export function AgendaSemanal() {
 
   const [loading, setLoading] = useState(true)
   const [googleConnected, setGoogleConnected] = useState(true)
+  const [googleAuthExpired, setGoogleAuthExpired] = useState(false)
   const [googleError, setGoogleError] = useState<string | null>(null)
   const [rawEvents, setRawEvents] = useState<Awaited<ReturnType<typeof fetchAgendaSemana>>['events']>([])
   const [mappings, setMappings] = useState<Awaited<ReturnType<typeof fetchAgendaSemana>>['mappings']>([])
@@ -68,11 +69,13 @@ export function AgendaSemanal() {
   const loadWeek = useCallback(async (mondayISO: string) => {
     setLoading(true)
     setGoogleError(null)
+    setGoogleAuthExpired(false)
     try {
       const sundayISO = addDaysISO(mondayISO, 6)
       const data = await fetchAgendaSemana(mondayISO, sundayISO)
       setTodayISO(data.today || getLocalTodayISO())
       setGoogleConnected(data.googleConnected)
+      setGoogleAuthExpired(Boolean(data.googleAuthExpired))
       setGoogleError(data.googleError)
       setRawEvents(data.events || [])
       setMappings(data.mappings || [])
@@ -486,28 +489,44 @@ export function AgendaSemanal() {
             <CalendarRange size={30} />
           </div>
           <div className="max-w-md mx-auto space-y-2">
-            <h2 className="text-xl font-bold text-primary">Conecte sua conta Google</h2>
+            <h2 className="text-xl font-bold text-primary">
+              {googleAuthExpired ? 'Sessão do Google expirada' : 'Conecte sua conta Google'}
+            </h2>
             <p className="text-sm text-brand-muted leading-relaxed">
-              Para exibir os atendimentos da semana automaticamente no visualizador estilo Google Agenda, conecte a conta que possui os eventos com <span className="font-semibold text-primary">#</span>.
+              {googleAuthExpired
+                ? 'Sua autorização anterior com o Google Calendar expirou. Clique abaixo para reconectar e manter a renovação automática ativa.'
+                : (
+                  <>
+                    Para exibir os atendimentos da semana automaticamente no visualizador estilo Google Agenda, conecte a conta que possui os eventos com <span className="font-semibold text-primary">#</span>.
+                  </>
+                )}
             </p>
           </div>
           <a href={getGoogleConnectUrl('/agenda')} className="btn-primary inline-flex">
             <Calendar size={17} />
-            Conectar Google Agenda
+            {googleAuthExpired ? 'Reconectar Google Agenda' : 'Conectar Google Agenda'}
           </a>
         </div>
       )}
 
       {googleError && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800 flex items-center justify-between gap-4">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800 flex flex-wrap items-center justify-between gap-4">
           <span>{googleError}</span>
-          <button
-            type="button"
-            onClick={() => loadWeek(weekMonday)}
-            className="px-3 py-1.5 rounded-xl bg-white border border-rose-200 text-xs font-semibold hover:bg-rose-100 transition-colors"
-          >
-            Tentar novamente
-          </button>
+          <div className="flex items-center gap-2">
+            <a
+              href={getGoogleConnectUrl('/agenda')}
+              className="px-3 py-1.5 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-primary-800 transition-colors"
+            >
+              Reconectar Google
+            </a>
+            <button
+              type="button"
+              onClick={() => loadWeek(weekMonday)}
+              className="px-3 py-1.5 rounded-xl bg-white border border-rose-200 text-xs font-semibold hover:bg-rose-100 transition-colors"
+            >
+              Tentar novamente
+            </button>
+          </div>
         </div>
       )}
 

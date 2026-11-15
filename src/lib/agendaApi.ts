@@ -28,6 +28,7 @@ export interface AgendaSemanaResponse {
   startDate: string
   endDate: string
   googleConnected: boolean
+  googleAuthExpired?: boolean
   googleError: string | null
   events: AgendaEventItem[]
   mappings: AgendaNameMapping[]
