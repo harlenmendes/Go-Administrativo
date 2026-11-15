@@ -75,85 +75,85 @@ export function PatientProfile() {
   const idade = calcularIdade(paciente.data_nascimento)
 
   return (
-    <div className="animate-fade-in" id="prontuario-content">
+    <div className="space-y-8 animate-fade-in" id="prontuario-content">
       <TopBar
-        title={paciente.nome.split(' ')[0]}
-        subtitle="Perfil do Paciente"
+        title={paciente.nome}
+        subtitle="Prontuário do Paciente"
         showBack
         rightSlot={
           <button
             id="btn-exportar-pdf"
             onClick={handleExportPDF}
             disabled={isExporting}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2 border-primary text-primary text-xs font-bold hover:bg-primary hover:text-white transition-all active:scale-95 disabled:opacity-50"
+            className="btn-outline py-2.5 px-4 text-xs"
           >
             {isExporting ? (
-               <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
             ) : (
-               <Download size={13} strokeWidth={2.5} />
+              <Download size={15} strokeWidth={2.2} />
             )}
-            PDF
+            Exportar PDF
           </button>
         }
       />
 
-      {/* Hero do paciente */}
-      <div className="bg-gradient-to-br from-primary-800 via-primary to-primary-600 px-4 pt-5 pb-6">
-        <div className="max-w-4xl mx-auto flex items-center gap-4">
-          <div className="w-20 h-20 rounded-3xl bg-white/10 border-2 border-white/20 flex flex-col items-center justify-center shadow-inner backdrop-blur-sm">
-            <span className="text-3xl font-black text-white">{iniciais}</span>
+      {/* Card Principal de Perfil do Paciente */}
+      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-brand-border shadow-card flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex items-center gap-5">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-primary text-white flex items-center justify-center shadow-sm flex-shrink-0">
+            <span className="text-2xl sm:text-3xl font-bold">{iniciais}</span>
           </div>
-          <div className="flex-1 text-white">
-            <h1 className="font-editorial text-2xl font-semibold mb-1">{paciente.nome}</h1>
-            <p className="text-primary-100 text-sm">{idade} anos • {paciente.profissao || 'Não informada'}</p>
-            <span className="inline-block mt-2 px-2 py-0.5 rounded-md bg-white/10 text-xs font-bold text-white border border-white/20">
-              {paciente.origem_encaminhamento || 'Particular'}
-            </span>
+          <div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h2 className="text-xl sm:text-2xl font-bold text-primary">{paciente.nome}</h2>
+              <span className="px-3 py-1 rounded-full bg-secondary-50 text-secondary-700 text-xs font-semibold">
+                {paciente.origem_encaminhamento || 'Particular'}
+              </span>
+            </div>
+            <p className="text-sm text-brand-muted mt-1">
+              {idade} anos · {paciente.profissao || 'Profissão não informada'}
+            </p>
           </div>
         </div>
-      </div>
 
-      {/* Info Cards Rápidos */}
-      <div className="max-w-4xl mx-auto px-4 -mt-4 mb-6 space-y-2">
-        <div className="card p-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center">
-              <Phone size={15} className="text-secondary" strokeWidth={2.5} />
+        <div className="flex flex-wrap items-center gap-4 pt-4 md:pt-0 border-t md:border-t-0 border-brand-border">
+          <div className="flex items-center gap-3 bg-brand-offwhite px-4 py-3 rounded-2xl border border-brand-border">
+            <div className="w-9 h-9 rounded-xl bg-secondary-50 flex items-center justify-center">
+              <Phone size={16} className="text-secondary-700" />
             </div>
             <div>
-              <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Telefone</p>
-              <p className="text-sm font-bold text-primary">{paciente.telefone}</p>
+              <p className="text-[11px] text-brand-muted font-medium">Telefone</p>
+              <p className="text-xs font-bold text-primary">{paciente.telefone}</p>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Paciente desde</p>
+
+          <div className="bg-brand-offwhite px-4 py-3 rounded-2xl border border-brand-border">
+            <p className="text-[11px] text-brand-muted font-medium">Paciente desde</p>
             <p className="text-xs font-bold text-primary">{formatarData(paciente.data_criacao)}</p>
           </div>
         </div>
-
-        {paciente.endereco && (
-          <a
-            href={`https://maps.google.com/?q=${encodeURIComponent(paciente.endereco)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="card p-3 flex items-center justify-between hover:bg-slate-50 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                <MapPin size={15} className="text-emerald-600" strokeWidth={2.5} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Endereço</p>
-                <p className="text-xs font-bold text-primary truncate leading-tight mt-0.5">{paciente.endereco}</p>
-              </div>
-            </div>
-          </a>
-        )}
       </div>
 
+      {paciente.endereco && (
+        <a
+          href={`https://maps.google.com/?q=${encodeURIComponent(paciente.endereco)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="bg-white rounded-3xl p-5 border border-brand-border shadow-card flex items-center gap-4 hover:border-secondary-300 transition-colors"
+        >
+          <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+            <MapPin size={18} className="text-emerald-600" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-brand-muted font-medium">Endereço</p>
+            <p className="text-sm font-semibold text-primary truncate mt-0.5">{paciente.endereco}</p>
+          </div>
+        </a>
+      )}
+
       {/* Tabs */}
-      <div className="max-w-4xl mx-auto px-4">
-        <div className="flex gap-1 p-1 bg-slate-100 rounded-xl mb-4">
+      <div className="space-y-6">
+        <div className="inline-flex gap-1.5 p-1.5 bg-white border border-brand-border rounded-2xl shadow-xs">
           {([
             { id: 'evolucoes', label: 'Evoluções', icon: Activity },
             { id: 'avaliacoes', label: 'Avaliação Inicial', icon: FileText },
@@ -162,13 +162,13 @@ export function PatientProfile() {
               key={tabId}
               id={`tab-${tabId}`}
               onClick={() => setActiveTab(tabId)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-bold rounded-lg transition-all ${
+              className={`flex items-center justify-center gap-2 py-2.5 px-5 text-xs font-bold rounded-xl transition-all ${
                 activeTab === tabId
-                  ? 'bg-white text-primary shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                  ? 'bg-primary text-white shadow-xs'
+                  : 'text-brand-muted hover:text-primary'
               }`}
             >
-              <Icon size={14} />
+              <Icon size={15} />
               {label}
             </button>
           ))}

@@ -45,6 +45,9 @@ export default function App() {
         <Route path="/acompanhamento" element={<Dashboard />} />
         <Route path="/pacientes" element={<PatientList />} />
         <Route path="/pacientes/:id" element={<PatientProfile />} />
+        <Route path="/novo-paciente" element={<NewPatient />} />
+        <Route path="/nova-avaliacao" element={<NovaAvaliacao />} />
+        <Route path="/nova-evolucao" element={<NovaEvolucao />} />
         <Route path="/fechamento" element={<Fechamento />} />
         <Route path="/configuracoes" element={<Settings />} />
         <Route
@@ -57,11 +60,6 @@ export default function App() {
           }
         />
       </Route>
-
-      {/* Telas de formulário clínico (Tela cheia) */}
-      <Route path="/novo-paciente" element={<ProtectedRoute><NewPatient /></ProtectedRoute>} />
-      <Route path="/nova-avaliacao" element={<ProtectedRoute><NovaAvaliacao /></ProtectedRoute>} />
-      <Route path="/nova-evolucao" element={<ProtectedRoute><NovaEvolucao /></ProtectedRoute>} />
     </Routes>
   )
 }

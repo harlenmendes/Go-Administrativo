@@ -1,15 +1,20 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Users, Calendar, Activity, ChevronRight, ArrowLeft } from 'lucide-react'
+import {
+  UserPlus,
+  UsersRound,
+  CalendarPlus,
+  Activity,
+  ChevronRight,
+  Phone,
+} from 'lucide-react'
 import { getAtendimentosHoje } from '@/lib/api'
 import { usePacientesStore } from '@/stores/usePacientesStore'
-import { useAuthStore } from '@/stores/useAuthStore'
 import { obterIniciaisNome } from '@/lib/utils'
 
 export function Dashboard() {
   const navigate = useNavigate()
   const { pacientes, fetchPacientes, isLoading } = usePacientesStore()
-  const { user } = useAuthStore()
 
   const [atendimentosHoje, setAtendimentosHoje] = useState(0)
   const [hojeLoading, setHojeLoading] = useState(true)
@@ -27,129 +32,157 @@ export function Dashboard() {
       })
   }, [fetchPacientes])
 
-  const hoje = new Date()
-  const saudacao =
-    hoje.getHours() < 12 ? 'Bom dia' : hoje.getHours() < 18 ? 'Boa tarde' : 'Boa noite'
-  const userName = user?.user_metadata?.name || 'Doutor(a)'
-
   return (
-    <div className="flex flex-col min-h-full bg-background">
-      {/* Header clínico com identidade Go Fisioterapia */}
-      <header className="bg-gradient-to-br from-primary-800 via-primary to-primary-500 text-white px-5 sm:px-6 pt-5 pb-8 rounded-b-[2rem] shadow-sm relative overflow-hidden animate-fade-in">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-secondary/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
-
-        <div className="max-w-4xl mx-auto relative z-10">
-          <div className="flex items-center justify-between mb-4">
-            <button
-              onClick={() => navigate('/')}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-secondary-300 hover:text-white transition-colors"
-            >
-              <ArrowLeft size={15} />
-              Voltar ao Portal
-            </button>
-            <span className="text-[11px] font-medium tracking-[0.18em] uppercase text-secondary-300">
-              Acompanhamento Clínico
-            </span>
-          </div>
-
-          <p className="text-primary-200 font-medium mb-1 text-sm">{saudacao},</p>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-6">
-            Dr(a). <span className="text-secondary-300">{userName}</span>
+    <div className="space-y-10 animate-fade-in">
+      {/* Cabeçalho da Página */}
+      <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-secondary-600 mb-1.5">
+            Módulo Clínico
+          </p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-primary tracking-tight">
+            Acompanhamento
           </h1>
-
-          {/* Métricas Principais */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/15">
-              <div className="flex items-center gap-2 text-secondary-300 mb-1">
-                <Users size={16} />
-                <span className="text-xs font-medium uppercase tracking-wider">Pacientes Ativos</span>
-              </div>
-              <p className="text-3xl font-semibold">{isLoading ? '—' : pacientes.length}</p>
-            </div>
-
-            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/15">
-              <div className="flex items-center gap-2 text-secondary-300 mb-1">
-                <Activity size={16} />
-                <span className="text-xs font-medium uppercase tracking-wider">Atendimentos Hoje</span>
-              </div>
-              <p className="text-3xl font-semibold">{hojeLoading ? '—' : atendimentosHoje}</p>
-            </div>
-          </div>
         </div>
+
+        <button
+          id="cta-novo-paciente-header"
+          onClick={() => navigate('/novo-paciente')}
+          className="btn-primary self-start sm:self-auto"
+        >
+          <UserPlus size={18} />
+          Novo Paciente
+        </button>
       </header>
 
-      <main className="flex-1 w-full max-w-4xl mx-auto px-4 sm:px-6 mt-6 space-y-8 animate-slide-up pb-8">
-        {/* Ações Rápidas */}
-        <section>
-          <div className="grid grid-cols-2 gap-3.5">
-            <button
-              id="cta-novo-paciente"
-              onClick={() => navigate('/novo-paciente')}
-              className="card-hover flex flex-col items-center justify-center gap-2 p-5"
-            >
-              <div className="w-12 h-12 bg-secondary-50 text-secondary-700 rounded-2xl flex items-center justify-center mb-1 border border-secondary-200">
-                <Plus size={24} />
-              </div>
-              <span className="text-sm font-semibold text-primary">Novo Paciente</span>
-              <span className="text-xs text-brand-muted">Cadastrar ficha clínica</span>
-            </button>
-
-            <button
-              id="cta-nova-evolucao"
-              onClick={() => navigate('/pacientes')}
-              className="card-hover flex flex-col items-center justify-center gap-2 p-5"
-            >
-              <div className="w-12 h-12 bg-primary-50 text-primary rounded-2xl flex items-center justify-center mb-1 border border-primary-100">
-                <Calendar size={24} />
-              </div>
-              <span className="text-sm font-semibold text-primary">Nova Sessão</span>
-              <span className="text-xs text-brand-muted">Selecionar paciente</span>
-            </button>
+      {/* Indicadores + Atalhos Rápidos */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="bg-white rounded-3xl p-6 border border-brand-border shadow-card flex items-center gap-4">
+          <div className="w-13 h-13 w-12 h-12 rounded-2xl bg-primary-50 text-primary flex items-center justify-center flex-shrink-0">
+            <UsersRound size={22} strokeWidth={1.9} />
           </div>
-        </section>
+          <div>
+            <p className="text-xs font-medium text-brand-muted">Pacientes Ativos</p>
+            <p className="text-2xl font-bold text-primary mt-0.5">
+              {isLoading ? '—' : pacientes.length}
+            </p>
+          </div>
+        </div>
 
-        {/* Últimos Pacientes */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xs font-semibold text-brand-muted uppercase tracking-[0.15em]">
-              Últimos Pacientes
-            </h2>
-            <button
-              onClick={() => navigate('/pacientes')}
-              className="text-xs font-semibold text-secondary-700 hover:text-primary flex items-center gap-0.5"
-            >
-              Ver todos <ChevronRight size={14} />
-            </button>
+        <div className="bg-white rounded-3xl p-6 border border-brand-border shadow-card flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-secondary-50 text-secondary-700 flex items-center justify-center flex-shrink-0">
+            <Activity size={22} strokeWidth={1.9} />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-brand-muted">Sessões Hoje</p>
+            <p className="text-2xl font-bold text-primary mt-0.5">
+              {hojeLoading ? '—' : atendimentosHoje}
+            </p>
+          </div>
+        </div>
+
+        <button
+          id="cta-novo-paciente"
+          onClick={() => navigate('/novo-paciente')}
+          className="bg-white rounded-3xl p-6 border border-brand-border shadow-card hover:shadow-card-hover hover:border-secondary-300 transition-all text-left flex items-center gap-4 group"
+        >
+          <div className="w-12 h-12 rounded-2xl bg-secondary-600 text-white flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+            <UserPlus size={21} strokeWidth={2} />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-primary">Cadastrar</p>
+            <p className="text-xs text-brand-muted mt-0.5">Nova ficha clínica</p>
+          </div>
+        </button>
+
+        <button
+          id="cta-nova-evolucao"
+          onClick={() => navigate('/pacientes')}
+          className="bg-white rounded-3xl p-6 border border-brand-border shadow-card hover:shadow-card-hover hover:border-secondary-300 transition-all text-left flex items-center gap-4 group"
+        >
+          <div className="w-12 h-12 rounded-2xl bg-primary text-white flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+            <CalendarPlus size={21} strokeWidth={2} />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-primary">Nova Sessão</p>
+            <p className="text-xs text-brand-muted mt-0.5">Registrar evolução</p>
+          </div>
+        </button>
+      </section>
+
+      {/* Pacientes Recentes */}
+      <section className="bg-white rounded-3xl border border-brand-border shadow-card p-6 sm:p-8 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-primary">Pacientes Recentes</h2>
+            <p className="text-xs text-brand-muted mt-0.5">
+              Clique em um paciente para abrir o prontuário
+            </p>
           </div>
 
-          <div className="space-y-3">
-            {isLoading ? (
-              <div className="card p-6 text-center text-sm text-brand-muted">Carregando...</div>
-            ) : pacientes.length === 0 ? (
-              <div className="card p-6 text-center text-sm text-brand-muted">
-                Nenhum paciente cadastrado ainda.
-              </div>
-            ) : (
-              pacientes.slice(0, 5).map((paciente) => (
-                <div
-                  key={paciente.id}
-                  onClick={() => navigate(`/pacientes/${paciente.id}`)}
-                  className="card-hover p-3.5 flex items-center gap-3.5"
-                >
-                  <div className="w-11 h-11 rounded-xl bg-primary-50 text-primary flex items-center justify-center font-semibold text-sm flex-shrink-0">
-                    {obterIniciaisNome(paciente.nome)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-primary text-sm truncate">{paciente.nome}</h3>
-                    <p className="text-xs text-brand-muted mt-0.5">{paciente.telefone}</p>
-                  </div>
-                  <ChevronRight size={16} className="text-brand-muted" />
+          <button
+            onClick={() => navigate('/pacientes')}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-secondary-700 hover:text-primary transition-colors"
+          >
+            Ver todos
+            <ChevronRight size={15} />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {isLoading ? (
+            <div className="py-12 text-center text-sm text-brand-muted">
+              Carregando pacientes...
+            </div>
+          ) : pacientes.length === 0 ? (
+            <div className="py-12 text-center space-y-3">
+              <p className="text-sm text-brand-muted">Nenhum paciente cadastrado ainda.</p>
+              <button
+                onClick={() => navigate('/novo-paciente')}
+                className="btn-secondary text-xs py-2.5 px-4"
+              >
+                <UserPlus size={15} />
+                Cadastrar Primeiro Paciente
+              </button>
+            </div>
+          ) : (
+            pacientes.slice(0, 6).map((paciente) => (
+              <div
+                key={paciente.id}
+                onClick={() => navigate(`/pacientes/${paciente.id}`)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === 'Enter' && navigate(`/pacientes/${paciente.id}`)}
+                className="p-4 rounded-2xl border border-brand-border hover:border-secondary-300 hover:bg-brand-offwhite transition-all cursor-pointer flex items-center gap-4 group"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-primary-50 text-primary flex items-center justify-center font-bold text-sm flex-shrink-0">
+                  {obterIniciaisNome(paciente.nome)}
                 </div>
-              ))
-            )}
-          </div>
-        </section>
-      </main>
+
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-primary text-sm sm:text-base truncate">
+                    {paciente.nome}
+                  </h3>
+                  <div className="flex items-center gap-3 text-xs text-brand-muted mt-1">
+                    <span className="inline-flex items-center gap-1">
+                      <Phone size={12} />
+                      {paciente.telefone}
+                    </span>
+                    {paciente.profissao && (
+                      <span className="hidden sm:inline">· {paciente.profissao}</span>
+                    )}
+                  </div>
+                </div>
+
+                <ChevronRight
+                  size={18}
+                  className="text-brand-muted group-hover:text-primary group-hover:translate-x-0.5 transition-all"
+                />
+              </div>
+            ))
+          )}
+        </div>
+      </section>
     </div>
   )
 }

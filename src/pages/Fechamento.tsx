@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft,
   Calendar,
   CheckCircle2,
   ExternalLink,
@@ -73,8 +71,6 @@ function getNextMonthStr(baseMonth: string): string {
 }
 
 export function Fechamento() {
-  const navigate = useNavigate()
-
   // Estado de conexão Google e dados do banco
   const [googleStatus, setGoogleStatus] = useState<GoogleAuthStatus | null>(null)
   const [checkingAuth, setCheckingAuth] = useState(true)
@@ -622,92 +618,76 @@ export function Fechamento() {
   }
 
   return (
-    <div className="min-h-full bg-background animate-fade-in">
-      {/* Header do Módulo */}
-      <header className="bg-gradient-to-br from-primary-800 via-primary to-primary-500 text-white px-5 sm:px-6 pt-5 pb-8 rounded-b-[2rem] shadow-sm relative overflow-hidden">
-        <div className="absolute -top-20 -right-20 w-72 h-72 bg-secondary/20 rounded-full blur-3xl pointer-events-none" />
+    <div className="space-y-8 animate-fade-in">
+      {/* Cabeçalho Limpo do Módulo */}
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-secondary-600 mb-1.5">
+            Financeiro · Google Calendar
+          </p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-primary tracking-tight">
+            Fechamento Mensal
+          </h1>
+          <p className="text-sm text-brand-muted mt-1">
+            Importe atendimentos da agenda, confira valores e gere a planilha no Sheets.
+          </p>
+        </div>
 
-        <div className="max-w-6xl mx-auto relative z-10">
-          <div className="flex items-center justify-between mb-4">
-            <button
-              onClick={() => navigate('/')}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-secondary-300 hover:text-white transition-colors"
-            >
-              <ArrowLeft size={15} />
-              Voltar ao Portal
-            </button>
-            <span className="text-[11px] font-medium tracking-[0.18em] uppercase text-secondary-300">
-              Financeiro · Google Calendar
-            </span>
-          </div>
-
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-                Fechamento de <span className="text-secondary-300">Atendimentos</span>
-              </h1>
-              <p className="text-primary-100/85 text-sm mt-1">
-                Importe eventos do Google Calendar, confira valores e gere a planilha no Google Sheets.
-              </p>
-            </div>
-
-            {/* Status da conexão Google */}
-            {!checkingAuth && (
-              <div className="flex items-center gap-2.5">
-                {googleStatus?.googleConnected ? (
-                  <div className="inline-flex items-center gap-2.5 bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl px-3.5 py-2">
-                    <CheckCircle2 size={16} className="text-secondary-300 flex-shrink-0" />
-                    <div className="text-left">
-                      <p className="text-xs font-semibold text-white leading-tight">
-                        {googleStatus.name || 'Google conectado'}
-                      </p>
-                      <p className="text-[11px] text-primary-200 leading-tight">
-                        {googleStatus.email}
-                      </p>
-                    </div>
-                    <button
-                      onClick={handleDisconnectGoogle}
-                      title="Desconectar conta Google"
-                      className="ml-1 p-1.5 rounded-lg hover:bg-white/15 text-primary-100 hover:text-white transition-colors"
-                    >
-                      <Unlink size={14} />
-                    </button>
-                  </div>
-                ) : (
-                  <a
-                    href={getGoogleConnectUrl('/fechamento')}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-primary font-semibold text-xs shadow-md hover:bg-brand-cream transition-all active:scale-95"
-                  >
-                    <Link2 size={15} className="text-secondary-600" />
-                    Conectar Google Agenda
-                  </a>
-                )}
+        {/* Status da conexão Google */}
+        {!checkingAuth && (
+          <div className="flex items-center gap-3 self-start md:self-auto">
+            {googleStatus?.googleConnected ? (
+              <div className="inline-flex items-center gap-3 bg-white border border-brand-border rounded-2xl px-4 py-2.5 shadow-xs">
+                <CheckCircle2 size={18} className="text-emerald-600 flex-shrink-0" />
+                <div className="text-left">
+                  <p className="text-xs font-bold text-primary leading-tight">
+                    {googleStatus.name || 'Google Conectado'}
+                  </p>
+                  <p className="text-[11px] text-brand-muted leading-tight">
+                    {googleStatus.email}
+                  </p>
+                </div>
+                <button
+                  onClick={handleDisconnectGoogle}
+                  title="Desconectar conta Google"
+                  className="ml-1 p-1.5 rounded-xl hover:bg-red-50 text-brand-muted hover:text-red-600 transition-colors"
+                >
+                  <Unlink size={15} />
+                </button>
               </div>
+            ) : (
+              <a
+                href={getGoogleConnectUrl('/fechamento')}
+                className="btn-primary text-xs py-3 px-5"
+              >
+                <Link2 size={16} />
+                Conectar Google Agenda
+              </a>
             )}
           </div>
-        </div>
+        )}
       </header>
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 -mt-4 relative z-20 space-y-6 pb-16">
+      <div className="space-y-8 pb-12">
         {/* Aviso caso Google não esteja conectado ainda */}
         {!checkingAuth && !googleStatus?.googleConnected && (
-          <div className="card p-5 border-l-4 border-l-secondary-600 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-secondary-50 text-secondary-700 flex items-center justify-center flex-shrink-0">
-                <Calendar size={20} />
+          <div className="bg-white rounded-3xl p-6 border border-brand-border shadow-card flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-secondary-50 text-secondary-700 flex items-center justify-center flex-shrink-0">
+                <Calendar size={22} />
               </div>
               <div>
-                <h2 className="font-semibold text-primary text-sm">
-                  Conecte sua conta Google para ler a agenda
+                <h2 className="font-bold text-primary text-base">
+                  Conecte sua conta Google Agenda
                 </h2>
                 <p className="text-xs text-brand-muted mt-0.5">
-                  Seu login no Go Administrativo já está ativo. Agora basta autorizar a leitura do Google Calendar e a criação de planilhas no Sheets.
+                  Autorize a leitura do Google Calendar e a criação de planilhas no Google Sheets.
                 </p>
               </div>
             </div>
             <a
               href={getGoogleConnectUrl('/fechamento')}
-              className="btn-primary py-2.5 px-4 text-xs flex-shrink-0"
+              className="btn-secondary py-3 px-5 text-xs flex-shrink-0"
             >
               <Link2 size={15} />
               Autorizar Google
@@ -716,20 +696,23 @@ export function Fechamento() {
         )}
 
         {/* Painel de Controles (Meses + Ações) */}
-        <div className="card p-5 sm:p-6">
-          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5">
-            <div className="flex-1 space-y-2.5">
-              <label className="label-base text-xs uppercase tracking-wider text-brand-muted">
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-brand-border shadow-card">
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+            <div className="flex-1 space-y-3">
+              <label className="block text-xs font-semibold uppercase tracking-widest text-brand-muted">
                 Meses de Referência
               </label>
-              <div className="flex flex-wrap gap-2.5">
+              <div className="flex flex-wrap gap-3">
                 {months.map((m, idx) => (
-                  <div key={idx} className="inline-flex items-center gap-1.5 bg-brand-cream border border-[#D1DBD6] rounded-xl px-3 py-1.5">
+                  <div
+                    key={idx}
+                    className="inline-flex items-center gap-2 bg-brand-cream border border-brand-border rounded-2xl px-4 py-2"
+                  >
                     <input
                       type="month"
                       value={m}
                       onChange={(e) => handleMonthChange(idx, e.target.value)}
-                      className="bg-transparent text-sm font-medium text-primary focus:outline-none"
+                      className="bg-transparent text-sm font-semibold text-primary focus:outline-none"
                     />
                     {months.length > 1 && (
                       <button
@@ -747,7 +730,7 @@ export function Fechamento() {
                 <button
                   type="button"
                   onClick={handleAddMonth}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-dashed border-secondary-500 text-secondary-700 hover:bg-secondary-50 text-xs font-semibold transition-colors"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl border border-dashed border-secondary-400 text-secondary-700 hover:bg-secondary-50 text-xs font-semibold transition-colors"
                 >
                   <Plus size={15} />
                   Adicionar Mês
@@ -759,26 +742,26 @@ export function Fechamento() {
               <button
                 type="button"
                 onClick={() => setShowManagePrices(true)}
-                className="btn-outline py-2.5 px-4 text-xs"
+                className="btn-outline py-3 px-4 text-xs"
               >
-                <Settings2 size={15} />
-                Gerenciar Valores ({Object.keys(dbPrices).length})
+                <Settings2 size={16} />
+                Valores Salvos ({Object.keys(dbPrices).length})
               </button>
 
               <button
                 type="button"
                 onClick={handleFetchAtendimentos}
                 disabled={isFetching || sortedValidMonths.length === 0}
-                className="btn-secondary py-2.5 px-5 text-xs"
+                className="btn-primary py-3 px-6 text-xs"
               >
                 {isFetching ? (
                   <>
-                    <Loader2 size={15} className="animate-spin" />
+                    <Loader2 size={16} className="animate-spin" />
                     Buscando Agenda...
                   </>
                 ) : (
                   <>
-                    <Calendar size={15} />
+                    <Calendar size={16} />
                     Buscar Atendimentos
                   </>
                 )}
@@ -789,38 +772,38 @@ export function Fechamento() {
 
         {/* Resultados */}
         {hasResults && (
-          <div className="space-y-5 animate-slide-up">
+          <div className="space-y-8 animate-slide-up">
             {/* Cards de Resumo */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-              <div className="card p-4 sm:p-5">
-                <p className="text-xs font-medium text-brand-muted uppercase tracking-wider">
-                  Pacientes
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="bg-white rounded-3xl p-6 border border-brand-border shadow-card">
+                <p className="text-xs font-medium text-brand-muted">
+                  Pacientes no Mês
                 </p>
-                <p className="text-2xl sm:text-3xl font-semibold text-primary mt-1">
+                <p className="text-3xl font-bold text-primary mt-1.5">
                   {totals.patientsCount}
                 </p>
               </div>
-              <div className="card p-4 sm:p-5">
-                <p className="text-xs font-medium text-brand-muted uppercase tracking-wider">
-                  Atendimentos
+              <div className="bg-white rounded-3xl p-6 border border-brand-border shadow-card">
+                <p className="text-xs font-medium text-brand-muted">
+                  Total de Sessões
                 </p>
-                <p className="text-2xl sm:text-3xl font-semibold text-primary mt-1">
+                <p className="text-3xl font-bold text-primary mt-1.5">
                   {totals.attendancesCount}
                 </p>
               </div>
-              <div className="card p-4 sm:p-5">
-                <p className="text-xs font-medium text-brand-muted uppercase tracking-wider">
+              <div className="bg-white rounded-3xl p-6 border border-brand-border shadow-card">
+                <p className="text-xs font-medium text-brand-muted">
                   Previsão Total
                 </p>
-                <p className="text-2xl sm:text-3xl font-semibold text-primary mt-1">
+                <p className="text-2xl sm:text-3xl font-bold text-primary mt-1.5">
                   {formatBRL(totals.expectedValue)}
                 </p>
               </div>
-              <div className="card p-4 sm:p-5 bg-secondary-50/60 border-secondary-200">
-                <p className="text-xs font-medium text-secondary-700 uppercase tracking-wider">
+              <div className="bg-secondary-50/70 rounded-3xl p-6 border border-secondary-200 shadow-card">
+                <p className="text-xs font-semibold text-secondary-700">
                   Já Recebido
                 </p>
-                <p className="text-2xl sm:text-3xl font-semibold text-secondary-800 mt-1">
+                <p className="text-2xl sm:text-3xl font-bold text-secondary-800 mt-1.5">
                   {formatBRL(totals.receivedValue)}
                 </p>
               </div>
@@ -1103,7 +1086,7 @@ export function Fechamento() {
               <span className="text-[11px] font-semibold uppercase tracking-wider text-secondary-700">
                 Novo Paciente na Agenda ({pendingPrices.length} pendente{pendingPrices.length > 1 ? 's' : ''})
               </span>
-              <h3 className="font-editorial text-2xl font-semibold text-primary mt-0.5">
+              <h3 className="text-xl font-bold text-primary mt-0.5">
                 Valor da Sessão
               </h3>
               <p className="text-sm text-brand-body mt-1">
@@ -1157,7 +1140,7 @@ export function Fechamento() {
           >
             <div className="p-5 border-b border-brand-border flex items-center justify-between">
               <div>
-                <h3 className="font-editorial text-2xl font-semibold text-primary">
+                <h3 className="text-xl font-bold text-primary">
                   Valores Salvos
                 </h3>
                 <p className="text-xs text-brand-muted">
@@ -1247,7 +1230,7 @@ export function Fechamento() {
             className="card w-full max-w-md p-6 space-y-4 animate-scale-in"
           >
             <div>
-              <h3 className="font-editorial text-2xl font-semibold text-primary">
+              <h3 className="text-xl font-bold text-primary">
                 Agrupar Paciente{mergeSources.length > 1 ? 's' : ''}
               </h3>
               <p className="text-sm text-brand-body mt-1">

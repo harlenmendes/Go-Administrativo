@@ -216,10 +216,10 @@ export function NewPatient() {
   }
 
   return (
-    <div className="w-full flex flex-col min-h-[100dvh] bg-slate-50 max-w-md md:max-w-2xl lg:max-w-3xl mx-auto relative shadow-2xl xl:shadow-none xl:border-x xl:border-slate-100">
-      <TopBar title={editId ? "Editar Paciente" : "Novo Paciente"} showBack />
+    <div className="w-full max-w-3xl space-y-6">
+      <TopBar title={editId ? "Editar Paciente" : "Novo Paciente"} subtitle="Preencha os dados cadastrais" showBack />
 
-      <main className="flex-1 p-4 pb-24">
+      <main className="space-y-6 pb-8">
         <form id="form-paciente" onSubmit={handleSave} className="space-y-6 animate-fade-in">
           {/* Dados Pessoais */}
           <div className="space-y-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
@@ -449,20 +449,20 @@ export function NewPatient() {
         </form>
       </main>
 
-      {/* Footer Fixo (Movido para fora do form para evitar bug de fixed position com CSS transform) */}
-      <div className="w-full fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-100 flex items-center shadow-bottom-nav z-10 max-w-md md:max-w-2xl lg:max-w-3xl mx-auto">
+      {/* Botão de Ação */}
+      <div className="pt-2 pb-8">
         <button
           type="submit"
           form="form-paciente"
           disabled={isSaving || !isFormValid()}
-          className="w-full py-3.5 px-4 rounded-xl bg-secondary text-white font-bold text-sm hover:bg-secondary-600 transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+          className="w-full sm:w-auto min-w-[220px] py-3.5 px-6 rounded-2xl bg-secondary text-white font-bold text-sm hover:bg-secondary-600 transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
         >
           {isSaving ? (
             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
           ) : (
             <>
               <CheckCircle2 size={18} />
-              Cadastrar Paciente
+              {editId ? "Salvar Alterações" : "Cadastrar Paciente"}
             </>
           )}
         </button>

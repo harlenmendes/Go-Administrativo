@@ -190,10 +190,10 @@ export function NovaEvolucao() {
   }
 
   return (
-    <div className="w-full flex flex-col min-h-[100dvh] bg-slate-50 max-w-md md:max-w-2xl lg:max-w-3xl mx-auto relative shadow-2xl xl:shadow-none xl:border-x xl:border-slate-100">
-      <TopBar title={editId ? "Editar Evolução" : "Nova Evolução"} showBack onBack={() => navigate(-1)} />
+    <div className="w-full max-w-3xl space-y-6">
+      <TopBar title={editId ? "Editar Evolução" : "Nova Evolução"} subtitle={paciente.nome} showBack onBack={() => navigate(-1)} />
 
-      <main className="flex-1 p-4 pb-24">
+      <main className="space-y-6 pb-4">
           {/* Cabeçalho de Contexto */}
         <div className="bg-primary text-white p-4 rounded-2xl mb-6 shadow-sm flex flex-col gap-4">
           <div className="flex items-center justify-between">
@@ -321,13 +321,13 @@ export function NovaEvolucao() {
         </form>
       </main>
 
-      {/* Footer Fixo (Movido para fora do form para evitar bug de fixed position com CSS transform) */}
-      <div className="w-full fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-100 flex items-center shadow-bottom-nav z-10 max-w-md md:max-w-2xl lg:max-w-3xl mx-auto">
+      {/* Botão Salvar */}
+      <div className="w-full pt-2 pb-8 flex items-center">
         <button
           type="submit"
           form="form-evolucao"
           disabled={isSaving || !isFormValid}
-          className="w-full py-3.5 px-4 rounded-xl bg-secondary text-white font-bold text-sm hover:bg-secondary-600 transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+          className="w-full sm:w-auto min-w-[220px] py-3.5 px-6 rounded-2xl bg-secondary text-white font-bold text-sm hover:bg-secondary-600 transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
         >
           {isSaving ? (
             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />

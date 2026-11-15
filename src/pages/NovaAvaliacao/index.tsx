@@ -216,23 +216,16 @@ export function NovaAvaliacao() {
   if (!paciente) return null
 
   return (
-    <div className="w-full flex flex-col min-h-[100dvh] bg-slate-50 max-w-md md:max-w-2xl lg:max-w-3xl mx-auto relative shadow-2xl xl:shadow-none xl:border-x xl:border-slate-100">
+    <div className="w-full max-w-3xl space-y-6">
       <TopBar 
         title="Nova Avaliação" 
+        subtitle={paciente.nome}
         onBack={handleBack}
       />
       
       <Stepper currentStep={currentStep} totalSteps={TOTAL_STEPS} labels={STEP_LABELS} />
 
-      <main className="flex-1 flex flex-col p-4 pb-24">
-        {/* Cabecalho de contexto do paciente */}
-        <div className="flex items-center gap-2 mb-6 opacity-70">
-          <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary">
-            {paciente.nome.substring(0,2).toUpperCase()}
-          </div>
-          <span className="text-xs font-semibold text-slate-600">{paciente.nome}</span>
-        </div>
-
+      <main className="flex-1 flex flex-col pt-2 pb-6">
         {/* Renderiza o passo atual */}
         <div className="flex-1 animate-fade-in">
           {currentStep === 1 && <Step1Historia data={formData} updateData={updateData} />}
@@ -243,8 +236,8 @@ export function NovaAvaliacao() {
         </div>
       </main>
 
-      {/* Botões Flutuantes Fim */}
-      <div className="w-full fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-100 flex items-center gap-3 shadow-bottom-nav z-10 max-w-md md:max-w-2xl lg:max-w-3xl mx-auto">
+      {/* Botões de Navegação dos Passos */}
+      <div className="w-full pt-2 pb-8 flex items-center gap-3">
         {currentStep > 1 && (
           <button
             type="button"
