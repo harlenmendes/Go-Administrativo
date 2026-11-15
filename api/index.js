@@ -174,11 +174,13 @@ async function supabaseRequest(table, { method = 'GET', query = '', body = null,
 
     const headers = {
         'apikey': cfg.key,
-        'Authorization': `Bearer ${cfg.key}`,
         'Content-Type': 'application/json',
         'Accept-Profile': cfg.schema,
         'Content-Profile': cfg.schema
     };
+    if (!cfg.key.startsWith('sb_')) {
+        headers['Authorization'] = `Bearer ${cfg.key}`;
+    }
     if (prefer) {
         headers['Prefer'] = prefer;
     }
