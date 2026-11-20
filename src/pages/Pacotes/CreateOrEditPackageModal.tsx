@@ -46,6 +46,7 @@ export function CreateOrEditPackageModal({
   const [startDate, setStartDate] = useState('')
   const [startingSessionNumber, setStartingSessionNumber] = useState(1)
   const [selectedPriorEventIds, setSelectedPriorEventIds] = useState<Set<string>>(new Set())
+  const [clearSessionsOnOwnerChange, setClearSessionsOnOwnerChange] = useState(true)
   const [isPaid, setIsPaid] = useState(false)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -95,7 +96,7 @@ export function CreateOrEditPackageModal({
 
     if (editingPackage) {
       const p = editingPackage.pkg
-      setPacienteId(p.paciente_id)
+      setPacienteId(p.paciente_id || '')
       setPackageType(p.package_type)
       setCustomTotal(String(p.total_sessions))
       setSessionPrice(p.session_price ? String(p.session_price) : '')
@@ -104,6 +105,7 @@ export function CreateOrEditPackageModal({
       setStartDate(p.start_date || '')
       setStartingSessionNumber((p.initial_offset || 0) + 1)
       setSelectedPriorEventIds(new Set())
+      setClearSessionsOnOwnerChange(true)
       setIsPaid(Boolean(p.is_paid))
       setNotes(p.notes || '')
       return
@@ -156,7 +158,7 @@ export function CreateOrEditPackageModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!pacienteId) {
+    if (!isEditing && !pacienteId) {
       setErrorMsg('Selecione o paciente.')
       return
     }
@@ -169,7 +171,9 @@ export function CreateOrEditPackageModal({
     setErrorMsg('')
     try {
       if (isEditing && editingPackage) {
+        const ownerChanged = (pacienteId || '') !== (editingPackage.pkg.paciente_id || '')
         await updatePackage(editingPackage.pkg.id, {
+          paciente_id: pacienteId || null,
           package_type: packageType,
           total_sessions: effectiveTotalSessions,
           session_price: priceNum,
@@ -178,6 +182,7 @@ export function CreateOrEditPackageModal({
           label: label.trim() || null,
           is_paid: isPaid,
           notes: notes.trim() || null,
+          clear_sessions: ownerChanged && editingPackage.sessions.length > 0 && clearSessionsOnOwnerChange,
         })
         onSaved('Pacote atualizado com sucesso!')
       } else {
@@ -264,16 +269,19 @@ export function CreateOrEditPackageModal({
           {/* Paciente Único */}
           <div className="space-y-2">
             <label className="block text-xs font-semibold uppercase tracking-wider text-brand-muted">
-              Paciente Único (Prontuário) *
+              Paciente Único (Prontuário) {isEditing ? '' : '*'}
             </label>
             <select
               value={pacienteId}
               onChange={(e) => setPacienteId(e.target.value)}
-              disabled={isEditing}
               className="input-base"
-              required
+              required={!isEditing}
             >
-              <option value="">Selecione um paciente...</option>
+              <option value="">
+                {isEditing
+                  ? '— Sem paciente vinculado (definir depois) —'
+                  : 'Selecione um paciente...'}
+              </option>
               {pacientes
                 .slice()
                 .sort((a, b) => a.nome.localeCompare(b.nome))
@@ -283,6 +291,22 @@ export function CreateOrEditPackageModal({
                   </option>
                 ))}
             </select>
+
+            {isEditing &&
+              editingPackage &&
+              editingPackage.sessions.length > 0 &&
+              (pacienteId || '') !== (editingPackage.pkg.paciente_id || '') && (
+                <label className="flex items-center gap-2 p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs font-medium text-amber-950 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={clearSessionsOnOwnerChange}
+                    onChange={(e) => setClearSessionsOnOwnerChange(e.target.checked)}
+                    className="w-4 h-4 accent-primary rounded"
+                  />
+                  Liberar as {editingPackage.sessions.length} sessão(ões) atuais da agenda para que
+                  fiquem livres/pendentes
+                </label>
+              )}
           </div>
 
           {/* Tipo de Pacote */}

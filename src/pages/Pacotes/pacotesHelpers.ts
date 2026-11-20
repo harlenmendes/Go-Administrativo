@@ -57,6 +57,13 @@ export function getWeekBounds(todayISO: string): { weekStart: string; weekEnd: s
   }
 }
 
+export function shiftISODate(isoDate: string, days: number): string {
+  const [y, m, d] = isoDate.split('-').map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d, 12, 0, 0))
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
 export interface ComputedSessionItem extends PackageSessionRecord {
   sessionNumber: number
   isCompleted: boolean // event_date <= today
@@ -114,6 +121,7 @@ export interface PatientAliasesSummary {
 
 export function computePacotesState(params: {
   today: string
+  selectedWeekStart?: string
   pacientes: Paciente[]
   events: CalendarEventItem[]
   links: PatientCalendarLink[]
@@ -122,10 +130,20 @@ export function computePacotesState(params: {
   sessions: PackageSessionRecord[]
   exclusions: PackageExclusionRecord[]
 }) {
-  const { today, pacientes, events, links, mappings, packages, sessions, exclusions } = params
+  const {
+    today,
+    selectedWeekStart,
+    pacientes,
+    events,
+    links,
+    mappings,
+    packages,
+    sessions,
+    exclusions,
+  } = params
 
   const pacienteById = new Map(pacientes.map((p) => [p.id, p]))
-  const { weekStart, weekEnd } = getWeekBounds(today)
+  const { weekStart, weekEnd } = getWeekBounds(selectedWeekStart || today)
 
   // Mapas de resolução 1-para-N (links diretos + agrupamentos do Fechamento)
   const linkByLower = new Map<string, PatientCalendarLink>()
@@ -208,7 +226,7 @@ export function computePacotesState(params: {
 
     computedPkgById.set(pkg.id, {
       pkg,
-      paciente: pacienteById.get(pkg.paciente_id),
+      paciente: pkg.paciente_id ? pacienteById.get(pkg.paciente_id) : undefined,
       sessions: computedSessions,
       usedTotal,
       completedCount,
@@ -324,6 +342,9 @@ export function computePacotesState(params: {
   })
 
   const allComputedPackages = Array.from(computedPkgById.values())
+  const unassignedPatientPackages = allComputedPackages.filter(
+    (cp) => !cp.pkg.paciente_id && cp.pkg.status !== 'cancelled'
+  )
   const packagesWithoutStartDate = allComputedPackages.filter((cp) => cp.needsStartDate)
   const weekEvents = resolvedEvents.filter((ev) => ev.isInCurrentWeek && ev.pendingKind !== 'ignored')
   const pendingEventsFromCutoff = resolvedEvents.filter(
@@ -337,6 +358,7 @@ export function computePacotesState(params: {
   return {
     weekBounds: { weekStart, weekEnd },
     allComputedPackages,
+    unassignedPatientPackages,
     packagesWithoutStartDate,
     resolvedEvents,
     weekEvents,

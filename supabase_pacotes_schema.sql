@@ -20,10 +20,12 @@ CREATE TABLE IF NOT EXISTS go_fechamento.patient_calendar_links (
 CREATE INDEX IF NOT EXISTS idx_patient_calendar_links_paciente
     ON go_fechamento.patient_calendar_links (paciente_id);
 
--- 2. Pacotes de Atendimento
+-- 2. Pacotes de Atendimento (paciente_id pode ser NULL ao desvincular o paciente único)
+-- Se você já criou esta tabela anteriormente com NOT NULL, execute no SQL Editor:
+--   ALTER TABLE go_fechamento.packages ALTER COLUMN paciente_id DROP NOT NULL;
 CREATE TABLE IF NOT EXISTS go_fechamento.packages (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    paciente_id UUID NOT NULL REFERENCES public.pacientes(id) ON DELETE CASCADE,
+    paciente_id UUID NULL REFERENCES public.pacientes(id) ON DELETE SET NULL,
     package_type TEXT NOT NULL CHECK (package_type IN ('5', '10', 'individual', 'personalizado')),
     label TEXT,
     total_sessions INTEGER NOT NULL CHECK (total_sessions > 0),

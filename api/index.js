@@ -544,20 +544,20 @@ async function fetchDetailedEventsFromGoogle(accessToken, startDate, endDate) {
     return events;
 }
 
-async function recalculatePackageStatuses(pacienteId = null) {
+async function recalculatePackageStatusesByIds(packageIds) {
     const cfg = getSupabaseConfig();
     if (!cfg) return;
 
-    const pkgQuery = pacienteId
-        ? `select=id,total_sessions,initial_offset,status&paciente_id=eq.${encodeURIComponent(pacienteId)}`
-        : 'select=id,total_sessions,initial_offset,status';
+    const cleanIds = Array.from(new Set((packageIds || []).filter(Boolean)));
+    if (cleanIds.length === 0) return;
 
-    const pkgs = (await supabaseRequest('packages', { query: pkgQuery })) || [];
+    const pkgs = (await supabaseRequest('packages', {
+        query: `select=id,total_sessions,initial_offset,status&id=in.(${cleanIds.map(encodeURIComponent).join(',')})`
+    })) || [];
     if (pkgs.length === 0) return;
 
-    const pkgIds = pkgs.map(p => p.id);
     const sessions = (await supabaseRequest('package_sessions', {
-        query: `select=id,package_id&package_id=in.(${pkgIds.map(encodeURIComponent).join(',')})`
+        query: `select=id,package_id&package_id=in.(${cleanIds.map(encodeURIComponent).join(',')})`
     })) || [];
 
     const countByPkg = {};
@@ -577,6 +577,20 @@ async function recalculatePackageStatuses(pacienteId = null) {
             });
         }
     }
+}
+
+async function recalculatePackageStatuses(pacienteId = null) {
+    const cfg = getSupabaseConfig();
+    if (!cfg) return;
+
+    const pkgQuery = pacienteId
+        ? `select=id,total_sessions,initial_offset,status&paciente_id=eq.${encodeURIComponent(pacienteId)}`
+        : 'select=id,total_sessions,initial_offset,status';
+
+    const pkgs = (await supabaseRequest('packages', { query: pkgQuery })) || [];
+    if (pkgs.length === 0) return;
+
+    await recalculatePackageStatusesByIds(pkgs.map(p => p.id));
 }
 
 async function syncAndDistributePackages(calendarEvents, windowStart, windowEnd) {
@@ -675,8 +689,10 @@ async function syncAndDistributePackages(calendarEvents, windowStart, windowEnd)
         const packagesByPaciente = {};
         for (const pkg of packages) {
             usedByPkg[pkg.id] = (pkg.initial_offset || 0) + (countByPkg[pkg.id] || 0);
-            if (!packagesByPaciente[pkg.paciente_id]) packagesByPaciente[pkg.paciente_id] = [];
-            packagesByPaciente[pkg.paciente_id].push(pkg);
+            if (pkg.paciente_id) {
+                if (!packagesByPaciente[pkg.paciente_id]) packagesByPaciente[pkg.paciente_id] = [];
+                packagesByPaciente[pkg.paciente_id].push(pkg);
+            }
         }
 
         const rowsToInsert = [];
@@ -1832,6 +1848,7 @@ module.exports = async function handler(req, res) {
 
             let calendarEvents = [];
             let googleConnected = Boolean(session && session.accessToken);
+            let googleAuthExpired = false;
             let googleError = null;
 
             if (googleConnected) {
@@ -1843,6 +1860,7 @@ module.exports = async function handler(req, res) {
                     console.error('Erro ao ler agenda para pacotes:', err);
                     if (err && err.isGoogleAuthError) {
                         googleConnected = false;
+                        googleAuthExpired = true;
                         googleError = null;
                     } else {
                         googleError = err.message;
@@ -1860,6 +1878,7 @@ module.exports = async function handler(req, res) {
                 today,
                 window: win,
                 googleConnected,
+                googleAuthExpired,
                 googleError,
                 events: calendarEvents,
                 ...state
@@ -2001,6 +2020,9 @@ module.exports = async function handler(req, res) {
             if (!existing) return res.status(404).send('Pacote não encontrado.');
 
             const updates = { updated_at: new Date().toISOString() };
+            if (body.paciente_id !== undefined) {
+                updates.paciente_id = body.paciente_id ? String(body.paciente_id).trim() : null;
+            }
             if (body.package_type !== undefined) updates.package_type = body.package_type;
             if (body.label !== undefined) updates.label = body.label || null;
             if (body.total_sessions !== undefined) updates.total_sessions = Math.max(1, parseInt(body.total_sessions, 10) || 1);
@@ -2019,13 +2041,35 @@ module.exports = async function handler(req, res) {
                 }).catch(() => {});
             }
 
-            await supabaseRequest('packages', {
-                method: 'PATCH',
-                query: `id=eq.${encodeURIComponent(pkgId)}`,
-                body: updates
-            });
+            // Opcional: ao desvincular ou trocar o paciente titular, liberar todas as sessões deste pacote
+            if (body.clear_sessions === true) {
+                await supabaseRequest('package_sessions', {
+                    method: 'DELETE',
+                    query: `package_id=eq.${encodeURIComponent(pkgId)}`
+                }).catch(() => {});
+            }
 
-            await recalculatePackageStatuses(existing.paciente_id);
+            try {
+                await supabaseRequest('packages', {
+                    method: 'PATCH',
+                    query: `id=eq.${encodeURIComponent(pkgId)}`,
+                    body: updates
+                });
+            } catch (err) {
+                const msg = String(err?.message || '');
+                if (msg.includes('23502') || msg.includes('null value in column "paciente_id"')) {
+                    return res.status(400).json({
+                        error: 'Para desvincular o paciente de um pacote no banco de dados, execute no SQL Editor do Supabase: ALTER TABLE go_fechamento.packages ALTER COLUMN paciente_id DROP NOT NULL;'
+                    });
+                }
+                throw err;
+            }
+
+            await recalculatePackageStatusesByIds([pkgId]);
+            if (existing.paciente_id) await recalculatePackageStatuses(existing.paciente_id);
+            if (updates.paciente_id && updates.paciente_id !== existing.paciente_id) {
+                await recalculatePackageStatuses(updates.paciente_id);
+            }
             return res.status(200).json({ ok: true });
         }
 
@@ -2047,14 +2091,32 @@ module.exports = async function handler(req, res) {
             const packageId = (body.package_id || '').trim();
             const ev = body.event;
             if (!packageId || !ev || !ev.eventId || !ev.date) {
-                return res.status(400).send('package_id e event válido são obrigatórios.');
+                return res.status(400).json({ error: 'package_id e event válido são obrigatórios.' });
             }
 
             const pkgArr = await supabaseRequest('packages', {
-                query: `select=id,paciente_id&id=eq.${encodeURIComponent(packageId)}`
+                query: `select=id,paciente_id,start_date&id=eq.${encodeURIComponent(packageId)}`
             });
             const pkg = pkgArr && pkgArr[0];
-            if (!pkg) return res.status(404).send('Pacote não encontrado.');
+            if (!pkg) return res.status(404).json({ error: 'Pacote não encontrado.' });
+
+            // Verifica se o evento já pertence a outro pacote
+            const existingSessArr = await supabaseRequest('package_sessions', {
+                query: `select=id,package_id&calendar_event_id=eq.${encodeURIComponent(ev.eventId)}`
+            }).catch(() => []);
+            const existingSess = existingSessArr && existingSessArr[0];
+            if (existingSess && existingSess.package_id !== packageId) {
+                return res.status(409).json({ error: 'Este atendimento já está vinculado a outro pacote.' });
+            }
+
+            // Se pacote estava sem data de início, define pela data deste atendimento
+            if (!pkg.start_date) {
+                await supabaseRequest('packages', {
+                    method: 'PATCH',
+                    query: `id=eq.${encodeURIComponent(packageId)}`,
+                    body: { start_date: ev.date, updated_at: new Date().toISOString() }
+                }).catch(() => {});
+            }
 
             // Remove de exclusões caso estivesse marcado como pendente ou ignorado
             await supabaseRequest('package_session_exclusions', {
@@ -2076,7 +2138,94 @@ module.exports = async function handler(req, res) {
                 }]
             });
 
-            await recalculatePackageStatuses(pkg.paciente_id);
+            await recalculatePackageStatusesByIds([packageId]);
+            return res.status(200).json({ ok: true });
+        }
+
+        // POST /api/pacotes/sessions/replace  { package_id, old_calendar_event_id, new_event }
+        if (pathname === '/api/pacotes/sessions/replace' && method === 'POST') {
+            const body = req.body || {};
+            const packageId = (body.package_id || '').trim();
+            const oldCalendarEventId = (body.old_calendar_event_id || '').trim();
+            const ev = body.new_event;
+
+            if (!packageId || !oldCalendarEventId || !ev || !ev.eventId || !ev.date) {
+                return res.status(400).json({ error: 'package_id, old_calendar_event_id e new_event válido são obrigatórios.' });
+            }
+
+            if (oldCalendarEventId === ev.eventId) {
+                return res.status(200).json({ ok: true });
+            }
+
+            const pkgArr = await supabaseRequest('packages', {
+                query: `select=id,paciente_id,start_date&id=eq.${encodeURIComponent(packageId)}`
+            });
+            const pkg = pkgArr && pkgArr[0];
+            if (!pkg) return res.status(404).json({ error: 'Pacote não encontrado.' });
+
+            const existingNewArr = await supabaseRequest('package_sessions', {
+                query: `select=id,package_id&calendar_event_id=eq.${encodeURIComponent(ev.eventId)}`
+            }).catch(() => []);
+            const existingNew = existingNewArr && existingNewArr[0];
+            if (existingNew && existingNew.package_id !== packageId) {
+                return res.status(409).json({ error: 'Este atendimento já está vinculado a outro pacote.' });
+            }
+
+            const oldSessArr = await supabaseRequest('package_sessions', {
+                query: `select=id,event_date,calendar_summary&calendar_event_id=eq.${encodeURIComponent(oldCalendarEventId)}&package_id=eq.${encodeURIComponent(packageId)}`
+            }).catch(() => []);
+            const oldSess = oldSessArr && oldSessArr[0];
+
+            // Remove a sessão antiga e marca como pendente em package_session_exclusions
+            // para impedir auto-distribuição automática de reanexá-la no reload
+            await supabaseRequest('package_sessions', {
+                method: 'DELETE',
+                query: `calendar_event_id=eq.${encodeURIComponent(oldCalendarEventId)}&package_id=eq.${encodeURIComponent(packageId)}`
+            });
+
+            await supabaseRequest('package_session_exclusions', {
+                method: 'POST',
+                query: 'on_conflict=calendar_event_id',
+                prefer: 'resolution=merge-duplicates',
+                body: [{
+                    calendar_event_id: oldCalendarEventId,
+                    paciente_id: pkg.paciente_id || null,
+                    event_date: oldSess?.event_date || null,
+                    calendar_summary: oldSess?.calendar_summary || null,
+                    status: 'pending',
+                    reason: 'replaced_in_package'
+                }]
+            }).catch(() => {});
+
+            // Remove exclusão do novo evento caso estivesse pendente ou ignorado
+            await supabaseRequest('package_session_exclusions', {
+                method: 'DELETE',
+                query: `calendar_event_id=eq.${encodeURIComponent(ev.eventId)}`
+            }).catch(() => {});
+
+            await supabaseRequest('package_sessions', {
+                method: 'POST',
+                query: 'on_conflict=calendar_event_id',
+                prefer: 'resolution=merge-duplicates',
+                body: [{
+                    package_id: packageId,
+                    calendar_event_id: ev.eventId,
+                    event_date: ev.date,
+                    event_datetime: ev.eventDatetime || `${ev.date}T12:00:00-03:00`,
+                    calendar_summary: ev.rawSummary || `#${ev.calendarName || ''}`,
+                    calendar_name: ev.calendarName || ''
+                }]
+            });
+
+            if (!pkg.start_date) {
+                await supabaseRequest('packages', {
+                    method: 'PATCH',
+                    query: `id=eq.${encodeURIComponent(packageId)}`,
+                    body: { start_date: ev.date, updated_at: new Date().toISOString() }
+                }).catch(() => {});
+            }
+
+            await recalculatePackageStatusesByIds([packageId]);
             return res.status(200).json({ ok: true });
         }
 
@@ -2091,6 +2240,11 @@ module.exports = async function handler(req, res) {
             if (!calendarEventId) {
                 return res.status(400).send('calendar_event_id é obrigatório.');
             }
+
+            const prevSessArr = await supabaseRequest('package_sessions', {
+                query: `select=package_id&calendar_event_id=eq.${encodeURIComponent(calendarEventId)}`
+            }).catch(() => []);
+            const oldPkgId = prevSessArr?.[0]?.package_id || null;
 
             await supabaseRequest('package_sessions', {
                 method: 'DELETE',
@@ -2111,7 +2265,8 @@ module.exports = async function handler(req, res) {
                 }]
             });
 
-            await recalculatePackageStatuses(pacienteId);
+            await recalculatePackageStatusesByIds([oldPkgId]);
+            if (pacienteId) await recalculatePackageStatuses(pacienteId);
             return res.status(200).json({ ok: true });
         }
 
@@ -2130,6 +2285,11 @@ module.exports = async function handler(req, res) {
             const targetPkg = pkgArr && pkgArr[0];
             if (!targetPkg) return res.status(404).send('Pacote de destino não encontrado.');
 
+            const prevSessArr = await supabaseRequest('package_sessions', {
+                query: `select=package_id&calendar_event_id=eq.${encodeURIComponent(calendarEventId)}`
+            }).catch(() => []);
+            const oldPkgId = prevSessArr?.[0]?.package_id || null;
+
             await supabaseRequest('package_session_exclusions', {
                 method: 'DELETE',
                 query: `calendar_event_id=eq.${encodeURIComponent(calendarEventId)}`
@@ -2141,7 +2301,7 @@ module.exports = async function handler(req, res) {
                 body: { package_id: targetPackageId }
             });
 
-            await recalculatePackageStatuses(targetPkg.paciente_id);
+            await recalculatePackageStatusesByIds([oldPkgId, targetPackageId]);
             return res.status(200).json({ ok: true });
         }
 

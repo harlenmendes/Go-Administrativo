@@ -45,12 +45,16 @@ import {
   formatISODateToBR,
   formatMonthLabel,
   getPackageTypeLabel,
+  getWeekBounds,
+  shiftISODate,
   type ComputedPackage,
+  type ComputedSessionItem,
   type ResolvedCalendarEvent,
 } from './pacotesHelpers'
 import { CreateOrEditPackageModal } from './CreateOrEditPackageModal'
 import { LinkCalendarModal } from './LinkCalendarModal'
 import { PackageReportModal } from './PackageReportModal'
+import { PackageAgendaPickerModal } from './PackageAgendaPickerModal'
 
 type PacotesTab = 'semana' | 'pacientes' | 'vinculos' | 'relatorio'
 
@@ -79,6 +83,7 @@ export function Pacotes() {
 
   const [activeTab, setActiveTab] = useState<PacotesTab>(initialTab)
   const [baseMonth, setBaseMonth] = useState<string>('')
+  const [selectedWeekStart, setSelectedWeekStart] = useState<string>('')
   const [overview, setOverview] = useState<PacotesOverviewResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -107,6 +112,9 @@ export function Pacotes() {
   const [linkModalDefaultPacienteId, setLinkModalDefaultPacienteId] = useState<string | null>(null)
 
   const [reportModalPkgId, setReportModalPkgId] = useState<string | null>(null)
+  const [agendaPickerPkgId, setAgendaPickerPkgId] = useState<string | null>(null)
+  const [agendaPickerReplacingSession, setAgendaPickerReplacingSession] =
+    useState<ComputedSessionItem | null>(null)
   const [exportingFullReport, setExportingFullReport] = useState(false)
 
   const showToast = useCallback((msg: string, err = false) => {
@@ -127,6 +135,9 @@ export function Pacotes() {
         if (!baseMonth && data.window?.currentMonth) {
           setBaseMonth(data.window.currentMonth)
         }
+        if (!selectedWeekStart && data.today) {
+          setSelectedWeekStart(getWeekBounds(data.today).weekStart)
+        }
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Erro ao carregar pacotes.', true)
       } finally {
@@ -146,6 +157,7 @@ export function Pacotes() {
     if (!overview) return null
     return computePacotesState({
       today: overview.today,
+      selectedWeekStart: selectedWeekStart || undefined,
       pacientes,
       events: overview.events,
       links: overview.links,
@@ -154,7 +166,7 @@ export function Pacotes() {
       sessions: overview.sessions,
       exclusions: overview.exclusions,
     })
-  }, [overview, pacientes])
+  }, [overview, pacientes, selectedWeekStart])
 
   const handleChangeBaseMonth = (delta: number) => {
     const current = baseMonth || overview?.window.currentMonth || ''
@@ -162,6 +174,42 @@ export function Pacotes() {
     const next = shiftMonthStr(current, delta)
     setBaseMonth(next)
     loadData(next, true)
+  }
+
+  const handleShiftWeek = (deltaWeeks: number) => {
+    const currentStart =
+      selectedWeekStart || (overview?.today ? getWeekBounds(overview.today).weekStart : '')
+    if (!currentStart) return
+    const nextStart = shiftISODate(currentStart, deltaWeeks * 7)
+    const nextEnd = shiftISODate(nextStart, 6)
+    setSelectedWeekStart(nextStart)
+    setAssigningEventId(null)
+
+    if (
+      overview?.window &&
+      (nextStart < overview.window.startDate || nextEnd > overview.window.endDate)
+    ) {
+      const targetMonth = nextStart.slice(0, 7)
+      setBaseMonth(targetMonth)
+      loadData(targetMonth, true)
+    }
+  }
+
+  const handleGoCurrentWeek = () => {
+    if (!overview?.today) return
+    const currentWeekStart = getWeekBounds(overview.today).weekStart
+    const currentWeekEnd = shiftISODate(currentWeekStart, 6)
+    setSelectedWeekStart(currentWeekStart)
+    setAssigningEventId(null)
+
+    if (
+      overview?.window &&
+      (currentWeekStart < overview.window.startDate || currentWeekEnd > overview.window.endDate)
+    ) {
+      const targetMonth = overview.today.slice(0, 7)
+      setBaseMonth(targetMonth)
+      loadData(targetMonth, true)
+    }
   }
 
   const openCreatePackageFresh = (pacienteId?: string | null) => {
@@ -193,6 +241,23 @@ export function Pacotes() {
 
   const handleQuickAssign = async (pkgId: string, ev: ResolvedCalendarEvent) => {
     if (!pkgId) return
+    const targetCp = computed?.allComputedPackages.find((c) => c.pkg.id === pkgId)
+    const targetLabel = targetCp
+      ? `${targetCp.paciente?.nome || 'Sem paciente'} — ${getPackageTypeLabel(
+          targetCp.pkg.package_type,
+          targetCp.pkg.total_sessions
+        )}`
+      : 'este pacote'
+    const ownerDiffers = Boolean(
+      targetCp && targetCp.pkg.paciente_id && targetCp.pkg.paciente_id !== ev.pacienteId
+    )
+    const msg = ownerDiffers
+      ? `Este atendimento (${ev.rawSummary}) pertence a outra pessoa.\nConfirmar o vínculo do dia ${ev.displayDate} ao pacote de ${targetLabel}?`
+      : `Confirmar o vínculo do atendimento de ${ev.displayDate} (${ev.rawSummary}) ao pacote "${targetLabel}"?`
+    if (!confirm(msg)) {
+      setAssigningEventId(null)
+      return
+    }
     try {
       await assignSessionToPackage(pkgId, ev)
       setAssigningEventId(null)
@@ -279,8 +344,32 @@ export function Pacotes() {
     return computed.allComputedPackages.find((c) => c.pkg.id === reportModalPkgId) || null
   }, [reportModalPkgId, computed])
 
+  const agendaPickerTargetPkg = useMemo(() => {
+    if (!agendaPickerPkgId || !computed) return null
+    return computed.allComputedPackages.find((c) => c.pkg.id === agendaPickerPkgId) || null
+  }, [agendaPickerPkgId, computed])
+
+  const allActivePackages = useMemo(() => {
+    if (!computed) return []
+    return computed.allComputedPackages.filter((c) => c.pkg.status !== 'cancelled')
+  }, [computed])
+
+  const allAvailablePackagesWithRoom = useMemo(() => {
+    return allActivePackages
+      .filter((cp) => cp.remainingCount > 0)
+      .slice()
+      .sort((a, b) =>
+        (a.paciente?.nome || 'ZZZ').localeCompare(b.paciente?.nome || 'ZZZ', 'pt-BR')
+      )
+  }, [allActivePackages])
+
+  const isViewingCurrentWeek = useMemo(() => {
+    if (!overview?.today || !computed) return true
+    return computed.weekBounds.weekStart === getWeekBounds(overview.today).weekStart
+  }, [overview, computed])
+
   const reportModalOtherPackages = useMemo(() => {
-    if (!reportModalComputedPkg || !computed) return []
+    if (!reportModalComputedPkg || !computed || !reportModalComputedPkg.pkg.paciente_id) return []
     return computed.allComputedPackages.filter(
       (c) =>
         c.pkg.paciente_id === reportModalComputedPkg.pkg.paciente_id &&
@@ -290,7 +379,7 @@ export function Pacotes() {
   }, [reportModalComputedPkg, computed])
 
   const reportModalFreeEvents = useMemo(() => {
-    if (!reportModalComputedPkg || !computed) return []
+    if (!reportModalComputedPkg || !computed || !reportModalComputedPkg.pkg.paciente_id) return []
     const summary = computed.patientSummaries.find(
       (s) => s.paciente.id === reportModalComputedPkg.pkg.paciente_id
     )
@@ -301,7 +390,7 @@ export function Pacotes() {
   }, [reportModalComputedPkg, computed])
 
   const reportModalLinkedNames = useMemo(() => {
-    if (!reportModalComputedPkg || !computed) return []
+    if (!reportModalComputedPkg || !computed || !reportModalComputedPkg.pkg.paciente_id) return []
     const summary = computed.patientSummaries.find(
       (s) => s.paciente.id === reportModalComputedPkg.pkg.paciente_id
     )
@@ -326,7 +415,8 @@ export function Pacotes() {
     return (
       computed.unlinkedGroups.length +
       computed.pendingEventsFromCutoff.length +
-      computed.packagesWithoutStartDate.length
+      computed.packagesWithoutStartDate.length +
+      computed.unassignedPatientPackages.length
     )
   }, [computed])
 
@@ -491,7 +581,9 @@ export function Pacotes() {
             <CalendarDays size={22} />
           </div>
           <div>
-            <p className="text-xs font-medium text-brand-muted">Na Semana Atual</p>
+            <p className="text-xs font-medium text-brand-muted">
+              {isViewingCurrentWeek ? 'Na Semana Atual' : 'Semana Selecionada'}
+            </p>
             <p className="text-2xl font-bold text-primary mt-0.5">
               {computed ? computed.weekEvents.length : '—'}
             </p>
@@ -667,31 +759,128 @@ export function Pacotes() {
                 </section>
               )}
 
-              {/* 1B. Atendimentos da Semana Atual */}
+              {/* 1A-bis. Pacotes sem Paciente Único vinculado */}
+              {computed.unassignedPatientPackages.length > 0 && (
+                <section className="bg-amber-50/70 border border-amber-200 rounded-3xl p-6 sm:p-7 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <UsersRound size={20} className="text-amber-700 flex-shrink-0" />
+                    <div>
+                      <h2 className="text-base font-bold text-amber-950">
+                        Pacotes sem Paciente Único vinculado ({computed.unassignedPatientPackages.length})
+                      </h2>
+                      <p className="text-xs text-amber-800">
+                        Esses pacotes tiveram o paciente desvinculado e aguardam um novo titular ou exclusão.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {computed.unassignedPatientPackages.map((cp) => (
+                      <div
+                        key={cp.pkg.id}
+                        className="bg-white rounded-2xl p-4 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div>
+                          <p className="text-sm font-bold text-primary">
+                            {getPackageTypeLabel(cp.pkg.package_type, cp.pkg.total_sessions)}
+                            {cp.pkg.label ? ` · ${cp.pkg.label}` : ''}
+                          </p>
+                          <p className="text-xs text-brand-muted mt-0.5">
+                            {cp.usedTotal}/{cp.pkg.total_sessions} sessões · Início{' '}
+                            {formatISODateToBR(cp.pkg.start_date)}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => openEditPackage(cp)}
+                            className="btn-primary py-1.5 px-3 text-xs"
+                          >
+                            <UserCheck size={13} />
+                            Vincular Paciente
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setReportModalPkgId(cp.pkg.id)}
+                            className="px-3 py-1.5 rounded-xl bg-brand-cream hover:bg-primary-50 text-primary text-xs font-semibold"
+                          >
+                            Gerenciar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePackage(cp)}
+                            className="p-1.5 rounded-xl text-brand-muted hover:text-red-600 hover:bg-red-50"
+                            title="Excluir pacote"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* 1B. Atendimentos da Semana com Navegação */}
               <section className="bg-white rounded-3xl border border-brand-border shadow-card p-6 sm:p-8 space-y-5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   <div>
                     <h2 className="text-lg font-bold text-primary">
                       Atendimentos da Semana ({formatISODateToBR(computed.weekBounds.weekStart)} a{' '}
                       {formatISODateToBR(computed.weekBounds.weekEnd)})
                     </h2>
                     <p className="text-xs text-brand-muted mt-0.5">
-                      Veja em qual sessão do pacote cada paciente está ou crie um pacote na hora (iniciando na 1ª ou na sessão X).
+                      Navegue pelas semanas para conferir sessões, trocar vínculos ou vincular atendimentos (inclusive de familiar/outra pessoa).
                     </p>
+                  </div>
+
+                  <div className="inline-flex items-center bg-brand-cream p-1 rounded-2xl border border-brand-border self-start lg:self-auto flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleShiftWeek(-1)}
+                      title="Semana anterior"
+                      className="w-9 h-8 rounded-xl flex items-center justify-center text-primary hover:bg-white transition-colors"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleGoCurrentWeek}
+                      className={`px-3 h-8 rounded-xl text-xs font-bold transition-colors ${
+                        isViewingCurrentWeek
+                          ? 'bg-primary text-white shadow-sm'
+                          : 'text-primary hover:bg-white'
+                      }`}
+                    >
+                      Semana Atual
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleShiftWeek(1)}
+                      title="Próxima semana"
+                      className="w-9 h-8 rounded-xl flex items-center justify-center text-primary hover:bg-white transition-colors"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
                   </div>
                 </div>
 
                 {!overview?.googleConnected ? (
                   <div className="p-8 rounded-2xl bg-brand-offwhite border border-brand-border text-center space-y-3">
                     <p className="text-sm text-brand-muted">
-                      Conecte sua conta Google Agenda para visualizar os atendimentos desta semana e distribuir nos pacotes.
+                      {overview?.googleAuthExpired
+                        ? 'Sua sessão com o Google Agenda expirou. Reconecte sua conta para visualizar e vincular os atendimentos.'
+                        : 'Conecte sua conta Google Agenda para visualizar os atendimentos desta semana e distribuir nos pacotes.'}
                     </p>
                     <a
                       href={getGoogleConnectUrl('/pacotes')}
                       className="btn-primary inline-flex text-xs py-2.5 px-5"
                     >
                       <Link2 size={15} />
-                      Conectar Google Agenda
+                      {overview?.googleAuthExpired
+                        ? 'Reconectar Google Agenda'
+                        : 'Conectar Google Agenda'}
                     </a>
                   </div>
                 ) : computed.weekEvents.length === 0 ? (
@@ -701,14 +890,14 @@ export function Pacotes() {
                 ) : (
                   <div className="divide-y divide-brand-border border border-brand-border rounded-2xl overflow-hidden">
                     {computed.weekEvents.map((ev) => {
-                      const patientAvailablePkgs = ev.pacienteId
-                        ? computed.allComputedPackages.filter(
-                            (cp) =>
-                              cp.pkg.paciente_id === ev.pacienteId &&
-                              cp.pkg.status !== 'cancelled' &&
-                              cp.remainingCount > 0
+                      const ownAvailablePkgs = ev.pacienteId
+                        ? allAvailablePackagesWithRoom.filter(
+                            (cp) => cp.pkg.paciente_id === ev.pacienteId
                           )
                         : []
+                      const otherAvailablePkgs = allAvailablePackagesWithRoom.filter(
+                        (cp) => cp.pkg.paciente_id !== ev.pacienteId
+                      )
 
                       return (
                         <div
@@ -767,26 +956,18 @@ export function Pacotes() {
                                 Ver Pacote
                               </button>
                             ) : ev.pendingKind === 'unlinked_patient' ? (
-                              <button
-                                type="button"
-                                onClick={() => openLinkModal([ev.calendarName])}
-                                className="btn-primary py-2 px-3.5 text-xs"
-                              >
-                                <Link2 size={14} />
-                                Vincular Paciente
-                              </button>
-                            ) : (
                               <>
-                                {patientAvailablePkgs.length > 0 && (
-                                  assigningEventId === ev.eventId ? (
+                                {allAvailablePackagesWithRoom.length > 0 &&
+                                  (assigningEventId === ev.eventId ? (
                                     <select
                                       defaultValue=""
                                       onChange={(e) => handleQuickAssign(e.target.value, ev)}
-                                      className="px-3 py-2 rounded-xl border border-secondary text-xs font-semibold text-primary bg-white"
+                                      className="px-3 py-2 rounded-xl border border-secondary text-xs font-semibold text-primary bg-white max-w-[240px]"
                                     >
-                                      <option value="">Escolher pacote...</option>
-                                      {patientAvailablePkgs.map((cp) => (
+                                      <option value="">Escolher pacote ativo...</option>
+                                      {allAvailablePackagesWithRoom.map((cp) => (
                                         <option key={cp.pkg.id} value={cp.pkg.id}>
+                                          {cp.paciente?.nome || 'Sem paciente'} ·{' '}
                                           {getPackageTypeLabel(cp.pkg.package_type, cp.pkg.total_sessions)} (
                                           {cp.usedTotal}/{cp.pkg.total_sessions})
                                         </option>
@@ -800,8 +981,57 @@ export function Pacotes() {
                                     >
                                       Vincular a Pacote
                                     </button>
-                                  )
-                                )}
+                                  ))}
+                                <button
+                                  type="button"
+                                  onClick={() => openLinkModal([ev.calendarName])}
+                                  className="btn-primary py-2 px-3.5 text-xs"
+                                >
+                                  <Link2 size={14} />
+                                  Vincular Paciente
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                {allAvailablePackagesWithRoom.length > 0 &&
+                                  (assigningEventId === ev.eventId ? (
+                                    <select
+                                      defaultValue=""
+                                      onChange={(e) => handleQuickAssign(e.target.value, ev)}
+                                      className="px-3 py-2 rounded-xl border border-secondary text-xs font-semibold text-primary bg-white max-w-[240px]"
+                                    >
+                                      <option value="">Escolher pacote...</option>
+                                      {ownAvailablePkgs.length > 0 && (
+                                        <optgroup label="Pacotes deste paciente">
+                                          {ownAvailablePkgs.map((cp) => (
+                                            <option key={cp.pkg.id} value={cp.pkg.id}>
+                                              {getPackageTypeLabel(cp.pkg.package_type, cp.pkg.total_sessions)} (
+                                              {cp.usedTotal}/{cp.pkg.total_sessions})
+                                            </option>
+                                          ))}
+                                        </optgroup>
+                                      )}
+                                      {otherAvailablePkgs.length > 0 && (
+                                        <optgroup label="Outros pacientes (ex: familiar)">
+                                          {otherAvailablePkgs.map((cp) => (
+                                            <option key={cp.pkg.id} value={cp.pkg.id}>
+                                              {cp.paciente?.nome || 'Sem paciente'} ·{' '}
+                                              {getPackageTypeLabel(cp.pkg.package_type, cp.pkg.total_sessions)} (
+                                              {cp.usedTotal}/{cp.pkg.total_sessions})
+                                            </option>
+                                          ))}
+                                        </optgroup>
+                                      )}
+                                    </select>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setAssigningEventId(ev.eventId)}
+                                      className="px-3 py-2 rounded-xl bg-secondary-50 text-secondary-800 hover:bg-secondary-100 text-xs font-semibold transition-colors"
+                                    >
+                                      Vincular a Pacote
+                                    </button>
+                                  ))}
                                 <button
                                   type="button"
                                   onClick={() => openCreatePackageFromEvent(ev)}
@@ -891,14 +1121,14 @@ export function Pacotes() {
 
                   <div className="divide-y divide-brand-border border border-brand-border rounded-2xl overflow-hidden">
                     {computed.pendingEventsFromCutoff.map((ev) => {
-                      const patientAvailablePkgs = ev.pacienteId
-                        ? computed.allComputedPackages.filter(
-                            (cp) =>
-                              cp.pkg.paciente_id === ev.pacienteId &&
-                              cp.pkg.status !== 'cancelled' &&
-                              cp.remainingCount > 0
+                      const ownAvailablePkgs = ev.pacienteId
+                        ? allAvailablePackagesWithRoom.filter(
+                            (cp) => cp.pkg.paciente_id === ev.pacienteId
                           )
                         : []
+                      const otherAvailablePkgs = allAvailablePackagesWithRoom.filter(
+                        (cp) => cp.pkg.paciente_id !== ev.pacienteId
+                      )
 
                       return (
                         <div
@@ -925,20 +1155,35 @@ export function Pacotes() {
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-                            {patientAvailablePkgs.length > 0 && (
-                              assigningEventId === `pending-${ev.eventId}` ? (
+                            {allAvailablePackagesWithRoom.length > 0 &&
+                              (assigningEventId === `pending-${ev.eventId}` ? (
                                 <select
                                   defaultValue=""
                                   onChange={(e) => handleQuickAssign(e.target.value, ev)}
-                                  className="px-3 py-1.5 rounded-xl border border-secondary text-xs font-semibold text-primary bg-white"
+                                  className="px-3 py-1.5 rounded-xl border border-secondary text-xs font-semibold text-primary bg-white max-w-[240px]"
                                 >
                                   <option value="">Escolher pacote...</option>
-                                  {patientAvailablePkgs.map((cp) => (
-                                    <option key={cp.pkg.id} value={cp.pkg.id}>
-                                      {getPackageTypeLabel(cp.pkg.package_type, cp.pkg.total_sessions)} (
-                                      {cp.usedTotal}/{cp.pkg.total_sessions})
-                                    </option>
-                                  ))}
+                                  {ownAvailablePkgs.length > 0 && (
+                                    <optgroup label="Pacotes deste paciente">
+                                      {ownAvailablePkgs.map((cp) => (
+                                        <option key={cp.pkg.id} value={cp.pkg.id}>
+                                          {getPackageTypeLabel(cp.pkg.package_type, cp.pkg.total_sessions)} (
+                                          {cp.usedTotal}/{cp.pkg.total_sessions})
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  )}
+                                  {otherAvailablePkgs.length > 0 && (
+                                    <optgroup label="Outros pacientes (ex: familiar)">
+                                      {otherAvailablePkgs.map((cp) => (
+                                        <option key={cp.pkg.id} value={cp.pkg.id}>
+                                          {cp.paciente?.nome || 'Sem paciente'} ·{' '}
+                                          {getPackageTypeLabel(cp.pkg.package_type, cp.pkg.total_sessions)} (
+                                          {cp.usedTotal}/{cp.pkg.total_sessions})
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  )}
                                 </select>
                               ) : (
                                 <button
@@ -948,8 +1193,7 @@ export function Pacotes() {
                                 >
                                   Vincular a Pacote
                                 </button>
-                              )
-                            )}
+                              ))}
                             <button
                               type="button"
                               onClick={() => openCreatePackageFromEvent(ev)}
@@ -1055,6 +1299,57 @@ export function Pacotes() {
                   ))}
                 </div>
               </div>
+
+              {/* Pacotes sem paciente vinculado no topo da aba Pacientes */}
+              {computed.unassignedPatientPackages.length > 0 && (
+                <div className="bg-amber-50/70 border border-amber-200 rounded-3xl p-6 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-bold text-amber-950">
+                        Pacotes sem Paciente Vinculado ({computed.unassignedPatientPackages.length})
+                      </h3>
+                      <p className="text-xs text-amber-800">
+                        Vincule um Paciente Único ou abra as sessões para gerenciar este pacote.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {computed.unassignedPatientPackages.map((cp) => (
+                      <div
+                        key={cp.pkg.id}
+                        className="p-4 rounded-2xl bg-white border border-amber-200 flex items-center justify-between gap-3"
+                      >
+                        <div>
+                          <p className="text-sm font-bold text-primary">
+                            {getPackageTypeLabel(cp.pkg.package_type, cp.pkg.total_sessions)}
+                            {cp.pkg.label ? ` · ${cp.pkg.label}` : ''}
+                          </p>
+                          <p className="text-xs text-brand-muted">
+                            {cp.usedTotal}/{cp.pkg.total_sessions} sessões · Início{' '}
+                            {formatISODateToBR(cp.pkg.start_date)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => openEditPackage(cp)}
+                            className="btn-primary py-1.5 px-3 text-xs"
+                          >
+                            Vincular Paciente
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setReportModalPkgId(cp.pkg.id)}
+                            className="px-3 py-1.5 rounded-xl bg-brand-cream text-primary text-xs font-semibold"
+                          >
+                            Sessões
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {filteredPatientSummaries.length === 0 ? (
                 <div className="bg-white rounded-3xl border border-brand-border p-12 text-center space-y-3">
@@ -1652,8 +1947,39 @@ export function Pacotes() {
         }}
         computedPkg={reportModalComputedPkg}
         otherPatientPackages={reportModalOtherPackages}
+        allActivePackages={allActivePackages}
+        pacientes={pacientes}
         patientPendingAndLegacyEvents={reportModalFreeEvents}
         linkedCalendarNames={reportModalLinkedNames}
+        onOpenAgendaPicker={(replacingSession) => {
+          if (!reportModalComputedPkg) return
+          setAgendaPickerPkgId(reportModalComputedPkg.pkg.id)
+          setAgendaPickerReplacingSession(replacingSession)
+        }}
+        onEditPackage={(cp) => openEditPackage(cp)}
+        onDeletePackage={(cp) => handleDeletePackage(cp)}
+      />
+
+      <PackageAgendaPickerModal
+        isOpen={Boolean(agendaPickerPkgId)}
+        onClose={() => {
+          setAgendaPickerPkgId(null)
+          setAgendaPickerReplacingSession(null)
+        }}
+        onChanged={(msg) => {
+          showToast(msg)
+          loadData(undefined, true)
+        }}
+        targetPackage={agendaPickerTargetPkg}
+        replacingSession={agendaPickerReplacingSession}
+        initialDate={
+          agendaPickerReplacingSession?.event_date ||
+          selectedWeekStart ||
+          overview?.today
+        }
+        allComputedPackages={computed?.allComputedPackages || []}
+        allLinks={overview?.links || []}
+        pacientes={pacientes}
       />
 
       {toast && (

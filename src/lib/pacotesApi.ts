@@ -31,7 +31,7 @@ export interface NameMappingRow {
 
 export interface PackageRecord {
   id: string
-  paciente_id: string
+  paciente_id: string | null
   package_type: PackageType
   label: string | null
   total_sessions: number
@@ -78,6 +78,7 @@ export interface PacotesOverviewResponse {
     endDate: string
   }
   googleConnected: boolean
+  googleAuthExpired?: boolean
   googleError: string | null
   events: CalendarEventItem[]
   links: PatientCalendarLink[]
@@ -172,6 +173,7 @@ export async function createPackage(input: CreatePackageInput): Promise<{ ok: bo
 export async function updatePackage(
   id: string,
   updates: Partial<{
+    paciente_id: string | null
     package_type: PackageType
     label: string | null
     total_sessions: number
@@ -181,6 +183,7 @@ export async function updatePackage(
     status: PackageStatus
     is_paid: boolean
     notes: string | null
+    clear_sessions: boolean
   }>
 ): Promise<void> {
   await apiFetch(`/api/pacotes/${encodeURIComponent(id)}`, {
@@ -204,6 +207,22 @@ export async function assignSessionToPackage(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ package_id: packageId, event }),
+  })
+}
+
+export async function replaceSessionInPackage(
+  packageId: string,
+  oldCalendarEventId: string,
+  newEvent: CalendarEventItem
+): Promise<void> {
+  await apiFetch('/api/pacotes/sessions/replace', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      package_id: packageId,
+      old_calendar_event_id: oldCalendarEventId,
+      new_event: newEvent,
+    }),
   })
 }
 
