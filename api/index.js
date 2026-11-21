@@ -593,6 +593,230 @@ async function recalculatePackageStatuses(pacienteId = null) {
     await recalculatePackageStatusesByIds(pkgs.map(p => p.id));
 }
 
+async function resolveFechamentoPriceForPaciente(pacienteId) {
+    if (!pacienteId) return null;
+    const cfg = getSupabaseConfig();
+    if (!cfg) return null;
+
+    const [linksRaw, mappingsRaw, pricesRaw] = await Promise.all([
+        supabaseRequest('patient_calendar_links', {
+            query: `select=calendar_name&paciente_id=eq.${encodeURIComponent(pacienteId)}`
+        }).catch(() => []),
+        supabaseRequest('patient_name_mappings', {
+            query: 'select=month_key,old_name,new_name'
+        }).catch(() => []),
+        supabaseRequest('patient_prices', {
+            query: 'select=name,price'
+        }).catch(() => [])
+    ]);
+
+    const priceByLower = new Map();
+    for (const r of pricesRaw || []) {
+        priceByLower.set(String(r.name || '').toLowerCase().trim(), Number(r.price));
+    }
+
+    const linkLowers = (linksRaw || []).map(l => String(l.calendar_name || '').toLowerCase().trim()).filter(Boolean);
+    for (const m of mappingsRaw || []) {
+        const oldLow = String(m.old_name || '').toLowerCase().trim();
+        const newLow = String(m.new_name || '').toLowerCase().trim();
+        if (linkLowers.includes(oldLow) && priceByLower.has(newLow)) {
+            return priceByLower.get(newLow);
+        }
+    }
+    for (const low of linkLowers) {
+        if (priceByLower.has(low)) {
+            return priceByLower.get(low);
+        }
+    }
+    return null;
+}
+
+async function syncPriceFromPacienteToFechamento(pacienteId, price) {
+    const numPrice = Number(price);
+    if (!pacienteId || isNaN(numPrice) || numPrice < 0) return;
+
+    const cfg = getSupabaseConfig();
+    if (!cfg) return;
+
+    const [linksRaw, mappingsRaw, pricesRaw, pacArr] = await Promise.all([
+        supabaseRequest('patient_calendar_links', {
+            query: `select=calendar_name&paciente_id=eq.${encodeURIComponent(pacienteId)}`
+        }).catch(() => []),
+        supabaseRequest('patient_name_mappings', {
+            query: 'select=month_key,old_name,new_name'
+        }).catch(() => []),
+        supabaseRequest('patient_prices', {
+            query: 'select=name,price'
+        }).catch(() => []),
+        supabaseRequest('pacientes', {
+            schema: 'public',
+            query: `select=nome&id=eq.${encodeURIComponent(pacienteId)}`
+        }).catch(() => [])
+    ]);
+
+    const existingPriceKeyByLower = new Map();
+    for (const r of pricesRaw || []) {
+        if (r.name) {
+            existingPriceKeyByLower.set(String(r.name).toLowerCase().trim(), String(r.name));
+        }
+    }
+
+    const targetNamesByLower = new Map();
+    const addTarget = (raw) => {
+        const trimmed = String(raw || '').trim();
+        if (!trimmed) return;
+        const low = trimmed.toLowerCase();
+        const canonical = existingPriceKeyByLower.get(low) || trimmed;
+        targetNamesByLower.set(low, canonical);
+    };
+
+    for (const l of linksRaw || []) {
+        addTarget(l.calendar_name);
+    }
+
+    for (const m of mappingsRaw || []) {
+        const oldLow = String(m.old_name || '').toLowerCase().trim();
+        const newLow = String(m.new_name || '').toLowerCase().trim();
+        if (targetNamesByLower.has(oldLow) && m.new_name) {
+            addTarget(m.new_name);
+        }
+        if (targetNamesByLower.has(newLow) && existingPriceKeyByLower.has(oldLow)) {
+            addTarget(existingPriceKeyByLower.get(oldLow));
+        }
+    }
+
+    // Caso paciente tenha nome em public.pacientes que já exista em patient_prices, mantém alinhado também
+    const pacNome = pacArr && pacArr[0] && pacArr[0].nome;
+    if (pacNome) {
+        const pacLow = String(pacNome).toLowerCase().trim();
+        if (existingPriceKeyByLower.has(pacLow)) {
+            addTarget(existingPriceKeyByLower.get(pacLow));
+        }
+    }
+
+    const upsertRows = Array.from(targetNamesByLower.values()).map(name => {
+        memoryStore.prices[name] = numPrice;
+        return { name, price: numPrice };
+    });
+
+    if (upsertRows.length > 0) {
+        await supabaseRequest('patient_prices', {
+            method: 'POST',
+            query: 'on_conflict=name',
+            prefer: 'resolution=merge-duplicates',
+            body: upsertRows
+        }).catch(err => console.error('Erro ao sincronizar preço para Fechamento:', err));
+    }
+
+    await supabaseRequest('packages', {
+        method: 'PATCH',
+        query: `paciente_id=eq.${encodeURIComponent(pacienteId)}&status=neq.cancelled`,
+        body: { session_price: numPrice, updated_at: new Date().toISOString() }
+    }).catch(err => console.error('Erro ao alinhar session_price dos pacotes do paciente:', err));
+}
+
+async function syncPriceFromFechamentoToPackages(entries) {
+    if (!Array.isArray(entries) || entries.length === 0) return;
+    const cfg = getSupabaseConfig();
+    if (!cfg) return;
+
+    const validEntries = entries
+        .map(e => ({ name: String(e?.name || '').trim(), price: Number(e?.price) }))
+        .filter(e => e.name && !isNaN(e.price) && e.price >= 0);
+    if (validEntries.length === 0) return;
+
+    const [linksRaw, mappingsRaw, pricesRaw] = await Promise.all([
+        supabaseRequest('patient_calendar_links', { query: 'select=paciente_id,calendar_name' }).catch(() => []),
+        supabaseRequest('patient_name_mappings', { query: 'select=month_key,old_name,new_name' }).catch(() => []),
+        supabaseRequest('patient_prices', { query: 'select=name,price' }).catch(() => [])
+    ]);
+
+    const pacienteIdsByLower = new Map();
+    const linksByPaciente = new Map();
+    for (const l of linksRaw || []) {
+        const low = String(l.calendar_name || '').toLowerCase().trim();
+        if (!low || !l.paciente_id) continue;
+        if (!pacienteIdsByLower.has(low)) pacienteIdsByLower.set(low, new Set());
+        pacienteIdsByLower.get(low).add(l.paciente_id);
+
+        if (!linksByPaciente.has(l.paciente_id)) linksByPaciente.set(l.paciente_id, []);
+        linksByPaciente.get(l.paciente_id).push(String(l.calendar_name));
+    }
+
+    const oldLowersByNewLower = new Map();
+    const newLowersByOldLower = new Map();
+    for (const m of mappingsRaw || []) {
+        const oldLow = String(m.old_name || '').toLowerCase().trim();
+        const newLow = String(m.new_name || '').toLowerCase().trim();
+        if (!oldLow || !newLow) continue;
+        if (!oldLowersByNewLower.has(newLow)) oldLowersByNewLower.set(newLow, new Set());
+        oldLowersByNewLower.get(newLow).add(oldLow);
+        if (!newLowersByOldLower.has(oldLow)) newLowersByOldLower.set(oldLow, new Set());
+        newLowersByOldLower.get(oldLow).add(newLow);
+    }
+
+    const existingPriceKeyByLower = new Map();
+    for (const r of pricesRaw || []) {
+        if (r.name) existingPriceKeyByLower.set(String(r.name).toLowerCase().trim(), String(r.name));
+    }
+
+    const priceByPaciente = new Map();
+    for (const item of validEntries) {
+        const low = item.name.toLowerCase();
+        const matchedIds = new Set();
+
+        const direct = pacienteIdsByLower.get(low);
+        if (direct) direct.forEach(id => matchedIds.add(id));
+
+        const mappedOlds = oldLowersByNewLower.get(low);
+        if (mappedOlds) {
+            mappedOlds.forEach(oldLow => {
+                const viaOld = pacienteIdsByLower.get(oldLow);
+                if (viaOld) viaOld.forEach(id => matchedIds.add(id));
+            });
+        }
+
+        const mappedNews = newLowersByOldLower.get(low);
+        if (mappedNews) {
+            mappedNews.forEach(newLow => {
+                const viaNew = pacienteIdsByLower.get(newLow);
+                if (viaNew) viaNew.forEach(id => matchedIds.add(id));
+            });
+        }
+
+        matchedIds.forEach(pid => priceByPaciente.set(pid, item.price));
+    }
+
+    const extraPriceUpserts = [];
+    for (const [pacienteId, numPrice] of priceByPaciente.entries()) {
+        await supabaseRequest('packages', {
+            method: 'PATCH',
+            query: `paciente_id=eq.${encodeURIComponent(pacienteId)}&status=neq.cancelled`,
+            body: { session_price: numPrice, updated_at: new Date().toISOString() }
+        }).catch(err => console.error('Erro ao sincronizar preço do Fechamento para Pacotes:', err));
+
+        // Alinha outros apelidos desse paciente que já tenham preço cadastrado em patient_prices
+        const pacLinks = linksByPaciente.get(pacienteId) || [];
+        for (const calName of pacLinks) {
+            const calLow = calName.toLowerCase().trim();
+            const existingExact = existingPriceKeyByLower.get(calLow);
+            if (existingExact) {
+                memoryStore.prices[existingExact] = numPrice;
+                extraPriceUpserts.push({ name: existingExact, price: numPrice });
+            }
+        }
+    }
+
+    if (extraPriceUpserts.length > 0) {
+        await supabaseRequest('patient_prices', {
+            method: 'POST',
+            query: 'on_conflict=name',
+            prefer: 'resolution=merge-duplicates',
+            body: extraPriceUpserts
+        }).catch(() => {});
+    }
+}
+
 async function syncAndDistributePackages(calendarEvents, windowStart, windowEnd) {
     const [linksRaw, mappingsRaw, packagesRaw, sessionsRaw, exclusionsRaw] = await Promise.all([
         supabaseRequest('patient_calendar_links', { query: 'select=*' }).catch(() => []),
@@ -1626,6 +1850,9 @@ module.exports = async function handler(req, res) {
                     prefer: 'resolution=merge-duplicates',
                     body: [{ name, price }]
                 });
+                await syncPriceFromFechamentoToPackages([{ name, price }]).catch(err =>
+                    console.error('Sync Fechamento->Pacotes erro:', err)
+                );
             }
             return res.status(200).json({ ok: true });
         }
@@ -1649,6 +1876,9 @@ module.exports = async function handler(req, res) {
                     prefer: 'resolution=merge-duplicates',
                     body: entries
                 });
+                await syncPriceFromFechamentoToPackages(entries).catch(err =>
+                    console.error('Sync lote Fechamento->Pacotes erro:', err)
+                );
             }
             return res.status(200).json({ ok: true });
         }
@@ -1868,11 +2098,25 @@ module.exports = async function handler(req, res) {
                 }
             }
 
-            const state = await syncAndDistributePackages(
-                googleConnected && !googleError ? calendarEvents : null,
-                win.startDate,
-                win.endDate
-            );
+            const [state, pricesRows] = await Promise.all([
+                syncAndDistributePackages(
+                    googleConnected && !googleError ? calendarEvents : null,
+                    win.startDate,
+                    win.endDate
+                ),
+                getSupabaseConfig()
+                    ? supabaseRequest('patient_prices', { query: 'select=name,price' }).catch(() => [])
+                    : Promise.resolve(null)
+            ]);
+
+            const prices = {};
+            if (Array.isArray(pricesRows)) {
+                for (const r of pricesRows) {
+                    if (r.name) prices[r.name] = Number(r.price);
+                }
+            } else {
+                Object.assign(prices, memoryStore.prices);
+            }
 
             return res.status(200).json({
                 today,
@@ -1881,6 +2125,7 @@ module.exports = async function handler(req, res) {
                 googleAuthExpired,
                 googleError,
                 events: calendarEvents,
+                prices,
                 ...state
             });
         }
@@ -1915,6 +2160,23 @@ module.exports = async function handler(req, res) {
                 body: rows
             });
 
+            // Sincroniza valor existente entre Fechamento e Pacotes após vincular nome(s) da agenda
+            const fechPrice = await resolveFechamentoPriceForPaciente(pacienteId).catch(() => null);
+            if (fechPrice !== null && fechPrice > 0) {
+                await supabaseRequest('packages', {
+                    method: 'PATCH',
+                    query: `paciente_id=eq.${encodeURIComponent(pacienteId)}&status=neq.cancelled&session_price=eq.0`,
+                    body: { session_price: fechPrice, updated_at: new Date().toISOString() }
+                }).catch(() => {});
+            } else {
+                const pacPkgs = await supabaseRequest('packages', {
+                    query: `select=session_price&paciente_id=eq.${encodeURIComponent(pacienteId)}&status=neq.cancelled&session_price=gt.0&order=created_at.desc&limit=1`
+                }).catch(() => []);
+                if (pacPkgs && pacPkgs[0] && Number(pacPkgs[0].session_price) > 0) {
+                    await syncPriceFromPacienteToFechamento(pacienteId, Number(pacPkgs[0].session_price)).catch(() => {});
+                }
+            }
+
             return res.status(200).json({ ok: true, links: inserted || [] });
         }
 
@@ -1948,6 +2210,14 @@ module.exports = async function handler(req, res) {
                 return res.status(400).send('Paciente e quantidade total de sessões são obrigatórios.');
             }
 
+            let effectivePrice = isNaN(sessionPrice) || sessionPrice < 0 ? 0 : sessionPrice;
+            if (effectivePrice === 0) {
+                const fechPrice = await resolveFechamentoPriceForPaciente(pacienteId).catch(() => null);
+                if (fechPrice !== null && fechPrice > 0) {
+                    effectivePrice = fechPrice;
+                }
+            }
+
             const initialStatus = initialOffset + attachEvents.length >= totalSessions ? 'completed' : 'active';
 
             const createdArr = await supabaseRequest('packages', {
@@ -1958,7 +2228,7 @@ module.exports = async function handler(req, res) {
                     package_type: packageType,
                     label,
                     total_sessions: totalSessions,
-                    session_price: isNaN(sessionPrice) ? 0 : sessionPrice,
+                    session_price: effectivePrice,
                     start_date: startDate || null,
                     initial_offset: initialOffset,
                     status: initialStatus,
@@ -1970,6 +2240,12 @@ module.exports = async function handler(req, res) {
             const createdPkg = Array.isArray(createdArr) ? createdArr[0] : createdArr;
             if (!createdPkg) {
                 return res.status(500).send('Falha ao criar pacote no banco de dados.');
+            }
+
+            if (effectivePrice > 0) {
+                await syncPriceFromPacienteToFechamento(pacienteId, effectivePrice).catch(err =>
+                    console.error('Sync Pacote->Fechamento erro:', err)
+                );
             }
 
             if (attachEvents.length > 0) {
@@ -2070,6 +2346,19 @@ module.exports = async function handler(req, res) {
             if (updates.paciente_id && updates.paciente_id !== existing.paciente_id) {
                 await recalculatePackageStatuses(updates.paciente_id);
             }
+
+            const effectivePacienteId = updates.paciente_id !== undefined ? updates.paciente_id : existing.paciente_id;
+            if (
+                body.session_price !== undefined &&
+                effectivePacienteId &&
+                updates.session_price >= 0 &&
+                (updates.session_price > 0 || updates.session_price !== existing.session_price)
+            ) {
+                await syncPriceFromPacienteToFechamento(effectivePacienteId, updates.session_price).catch(err =>
+                    console.error('Sync PATCH Pacote->Fechamento erro:', err)
+                );
+            }
+
             return res.status(200).json({ ok: true });
         }
 

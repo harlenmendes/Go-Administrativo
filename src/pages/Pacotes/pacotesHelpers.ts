@@ -78,6 +78,8 @@ export interface ComputedPackage {
   completedCount: number
   scheduledFutureCount: number
   remainingCount: number
+  effectiveSessionPrice: number
+  priceFromFechamento: boolean
   totalValue: number
   needsStartDate: boolean
   isNearEnd: boolean // falta 1 ou 0 e já iniciou
@@ -114,6 +116,7 @@ export interface PatientAliasesSummary {
   paciente: Paciente
   directLinks: PatientCalendarLink[]
   groupedAliasesFromFechamento: string[]
+  fechamentoPrice: number | null
   packages: ComputedPackage[]
   pendingEvents: ResolvedCalendarEvent[]
   legacyEvents: ResolvedCalendarEvent[]
@@ -126,6 +129,7 @@ export function computePacotesState(params: {
   events: CalendarEventItem[]
   links: PatientCalendarLink[]
   mappings: NameMappingRow[]
+  prices?: Record<string, number>
   packages: PackageRecord[]
   sessions: PackageSessionRecord[]
   exclusions: PackageExclusionRecord[]
@@ -137,6 +141,7 @@ export function computePacotesState(params: {
     events,
     links,
     mappings,
+    prices,
     packages,
     sessions,
     exclusions,
@@ -194,6 +199,76 @@ export function computePacotesState(params: {
 
   const exclusionByEventId = new Map(exclusions.map((x) => [x.calendar_event_id, x]))
 
+  // Resolver preço salvo no Fechamento por Paciente Único (prioridade: nome mapeado -> link direto -> agrupado -> nome do paciente)
+  const priceByLower = new Map<string, number>()
+  for (const [k, v] of Object.entries(prices || {})) {
+    const num = Number(v)
+    if (k && !isNaN(num)) {
+      priceByLower.set(k.toLowerCase().trim(), num)
+    }
+  }
+
+  const fechamentoPriceByPaciente = new Map<string, number | null>()
+  const groupedAliasesByPaciente = new Map<string, string[]>()
+
+  for (const paciente of pacientes) {
+    const directLinks = linksByPaciente.get(paciente.id) || []
+    const directLowers = new Set(directLinks.map((l) => l.calendar_name.toLowerCase().trim()))
+    const groupedSet = new Set<string>()
+    for (const l of directLinks) {
+      const aliases = aliasesByTargetLower.get(l.calendar_name.toLowerCase().trim())
+      if (aliases) {
+        for (const a of aliases) {
+          if (!directLowers.has(a.toLowerCase().trim())) {
+            groupedSet.add(a)
+          }
+        }
+      }
+    }
+    const groupedArr = Array.from(groupedSet).sort()
+    groupedAliasesByPaciente.set(paciente.id, groupedArr)
+
+    let resolvedPrice: number | null = null
+    // 1) Nomes finais mapeados no Fechamento para os links deste paciente
+    for (const l of directLinks) {
+      const lLow = l.calendar_name.toLowerCase().trim()
+      const mapped = fallbackMapping.get(lLow)
+      if (mapped && priceByLower.has(mapped.toLowerCase().trim())) {
+        resolvedPrice = priceByLower.get(mapped.toLowerCase().trim())!
+        break
+      }
+    }
+    // 2) Link direto na tabela de preços
+    if (resolvedPrice === null) {
+      for (const l of directLinks) {
+        const lLow = l.calendar_name.toLowerCase().trim()
+        if (priceByLower.has(lLow)) {
+          resolvedPrice = priceByLower.get(lLow)!
+          break
+        }
+      }
+    }
+    // 3) Alias agrupado
+    if (resolvedPrice === null) {
+      for (const alias of groupedArr) {
+        const aLow = alias.toLowerCase().trim()
+        if (priceByLower.has(aLow)) {
+          resolvedPrice = priceByLower.get(aLow)!
+          break
+        }
+      }
+    }
+    // 4) Nome exato do prontuário
+    if (resolvedPrice === null) {
+      const pLow = paciente.nome.toLowerCase().trim()
+      if (priceByLower.has(pLow)) {
+        resolvedPrice = priceByLower.get(pLow)!
+      }
+    }
+
+    fechamentoPriceByPaciente.set(paciente.id, resolvedPrice)
+  }
+
   // Computar pacotes
   const computedPkgById = new Map<string, ComputedPackage>()
   const sessionNumberByEventId = new Map<string, number>()
@@ -224,6 +299,9 @@ export function computePacotesState(params: {
     const needsStartDate = !pkg.start_date && pkg.status !== 'cancelled'
     const isNearEnd = pkg.status !== 'cancelled' && remainingCount <= 1 && usedTotal > 0
 
+    const fechPrice = pkg.paciente_id ? fechamentoPriceByPaciente.get(pkg.paciente_id) ?? null : null
+    const effectiveSessionPrice = fechPrice !== null ? fechPrice : pkg.session_price || 0
+
     computedPkgById.set(pkg.id, {
       pkg,
       paciente: pkg.paciente_id ? pacienteById.get(pkg.paciente_id) : undefined,
@@ -232,7 +310,9 @@ export function computePacotesState(params: {
       completedCount,
       scheduledFutureCount,
       remainingCount,
-      totalValue: pkg.total_sessions * (pkg.session_price || 0),
+      effectiveSessionPrice,
+      priceFromFechamento: fechPrice !== null,
+      totalValue: pkg.total_sessions * effectiveSessionPrice,
       needsStartDate,
       isNearEnd,
     })
@@ -304,18 +384,7 @@ export function computePacotesState(params: {
   // Agrupar por paciente único
   const patientSummaries: PatientAliasesSummary[] = pacientes.map((paciente) => {
     const directLinks = linksByPaciente.get(paciente.id) || []
-    const directLowers = new Set(directLinks.map((l) => l.calendar_name.toLowerCase().trim()))
-    const groupedSet = new Set<string>()
-    for (const l of directLinks) {
-      const aliases = aliasesByTargetLower.get(l.calendar_name.toLowerCase().trim())
-      if (aliases) {
-        for (const a of aliases) {
-          if (!directLowers.has(a.toLowerCase().trim())) {
-            groupedSet.add(a)
-          }
-        }
-      }
-    }
+    const groupedAliasesFromFechamento = groupedAliasesByPaciente.get(paciente.id) || []
 
     const patientPackages = Array.from(computedPkgById.values())
       .filter((cp) => cp.pkg.paciente_id === paciente.id)
@@ -334,7 +403,8 @@ export function computePacotesState(params: {
     return {
       paciente,
       directLinks,
-      groupedAliasesFromFechamento: Array.from(groupedSet).sort(),
+      groupedAliasesFromFechamento,
+      fechamentoPrice: fechamentoPriceByPaciente.get(paciente.id) ?? null,
       packages: patientPackages,
       pendingEvents,
       legacyEvents,

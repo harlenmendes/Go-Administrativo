@@ -162,11 +162,21 @@ export function Pacotes() {
       events: overview.events,
       links: overview.links,
       mappings: overview.mappings,
+      prices: overview.prices,
       packages: overview.packages,
       sessions: overview.sessions,
       exclusions: overview.exclusions,
     })
   }, [overview, pacientes, selectedWeekStart])
+
+  const patientFechamentoPrices = useMemo(() => {
+    const map: Record<string, number | null> = {}
+    if (!computed) return map
+    for (const s of computed.patientSummaries) {
+      map[s.paciente.id] = s.fechamentoPrice
+    }
+    return map
+  }, [computed])
 
   const handleChangeBaseMonth = (delta: number) => {
     const current = baseMonth || overview?.window.currentMonth || ''
@@ -742,7 +752,7 @@ export function Pacotes() {
                           </p>
                           <p className="text-xs text-brand-muted mt-0.5">
                             {getPackageTypeLabel(cp.pkg.package_type, cp.pkg.total_sessions)} ·{' '}
-                            {formatBRL(cp.pkg.session_price)}/sessão
+                            {formatBRL(cp.effectiveSessionPrice)}/sessão
                           </p>
                         </div>
                         <button
@@ -1461,7 +1471,7 @@ export function Pacotes() {
                                     </div>
                                     <p className="text-xs text-brand-muted mt-1">
                                       Início: <strong>{formatISODateToBR(cp.pkg.start_date)}</strong> ·{' '}
-                                      {formatBRL(cp.pkg.session_price)}/sessão (Total{' '}
+                                      {formatBRL(cp.effectiveSessionPrice)}/sessão (Total{' '}
                                       {formatBRL(cp.totalValue)})
                                     </p>
                                   </div>
@@ -1818,7 +1828,7 @@ export function Pacotes() {
                             <div className="flex items-center gap-4">
                               <div className="text-right">
                                 <p className="text-xs text-brand-muted">
-                                  {formatBRL(cp.pkg.session_price)} / sessão
+                                  {formatBRL(cp.effectiveSessionPrice)} / sessão
                                 </p>
                                 <p className="text-base font-bold text-primary">
                                   Total: {formatBRL(cp.totalValue)}
@@ -1921,6 +1931,7 @@ export function Pacotes() {
         }}
         pacientes={pacientes}
         allEvents={computed?.resolvedEvents || []}
+        patientFechamentoPrices={patientFechamentoPrices}
         editingPackage={editingPkg}
         seedPacienteId={seedPacienteId}
         seedEvent={seedEvent}

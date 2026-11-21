@@ -83,6 +83,7 @@ export interface PacotesOverviewResponse {
   events: CalendarEventItem[]
   links: PatientCalendarLink[]
   mappings: NameMappingRow[]
+  prices?: Record<string, number>
   packages: PackageRecord[]
   sessions: PackageSessionRecord[]
   exclusions: PackageExclusionRecord[]

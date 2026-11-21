@@ -20,6 +20,7 @@ interface CreateOrEditPackageModalProps {
   onSaved: (message: string) => void
   pacientes: Paciente[]
   allEvents: ResolvedCalendarEvent[]
+  patientFechamentoPrices?: Record<string, number | null>
   editingPackage?: ComputedPackage | null
   seedPacienteId?: string | null
   seedEvent?: ResolvedCalendarEvent | null
@@ -31,6 +32,7 @@ export function CreateOrEditPackageModal({
   onSaved,
   pacientes,
   allEvents,
+  patientFechamentoPrices = {},
   editingPackage,
   seedPacienteId,
   seedEvent,
@@ -99,7 +101,11 @@ export function CreateOrEditPackageModal({
       setPacienteId(p.paciente_id || '')
       setPackageType(p.package_type)
       setCustomTotal(String(p.total_sessions))
-      setSessionPrice(p.session_price ? String(p.session_price) : '')
+      setSessionPrice(
+        editingPackage.effectiveSessionPrice
+          ? String(editingPackage.effectiveSessionPrice)
+          : ''
+      )
       setLabel(p.label || '')
       setHasStartDate(Boolean(p.start_date))
       setStartDate(p.start_date || '')
@@ -112,10 +118,13 @@ export function CreateOrEditPackageModal({
     }
 
     const initialPacId = seedEvent?.pacienteId || seedPacienteId || pacientes[0]?.id || ''
+    const savedFechPrice = initialPacId ? patientFechamentoPrices[initialPacId] : null
     setPacienteId(initialPacId)
     setPackageType('10')
     setCustomTotal('8')
-    setSessionPrice('')
+    setSessionPrice(
+      savedFechPrice !== null && savedFechPrice !== undefined ? String(savedFechPrice) : ''
+    )
     setLabel('')
     setHasStartDate(Boolean(seedEvent) || true)
     setStartDate(seedEvent?.date || '')
@@ -273,7 +282,16 @@ export function CreateOrEditPackageModal({
             </label>
             <select
               value={pacienteId}
-              onChange={(e) => setPacienteId(e.target.value)}
+              onChange={(e) => {
+                const nextId = e.target.value
+                setPacienteId(nextId)
+                if (!isEditing) {
+                  const p = nextId ? patientFechamentoPrices[nextId] : null
+                  if (p !== null && p !== undefined) {
+                    setSessionPrice(String(p))
+                  }
+                }
+              }}
               className="input-base"
               required={!isEditing}
             >
@@ -359,7 +377,7 @@ export function CreateOrEditPackageModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="block text-xs font-semibold uppercase tracking-wider text-brand-muted">
-                Valor por Sessão (para relatório)
+                Valor por Sessão (unificado com Fechamento)
               </label>
               <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-bold text-brand-muted">
@@ -380,6 +398,9 @@ export function CreateOrEditPackageModal({
                   Total do pacote ({effectiveTotalSessions}x): {formatBRL(totalPackageValue)}
                 </p>
               )}
+              <p className="text-[11px] text-brand-muted leading-snug">
+                Sincronizado automaticamente com o Fechamento: alterar aqui atualiza nos dois lugares.
+              </p>
             </div>
 
             <div className="space-y-2">

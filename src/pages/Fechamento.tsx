@@ -161,6 +161,7 @@ export function Fechamento() {
           syncMappings(mergedMappings).catch(() => {})
         }
 
+        localStorage.setItem('patientPrices', JSON.stringify(mergedPrices))
         setDbPrices(mergedPrices)
         setDbMappings(mergedMappings)
       } finally {
@@ -263,9 +264,17 @@ export function Fechamento() {
     setSelectedNames(new Set())
 
     try {
-      const list = await fetchCalendarAtendimentos(sortedValidMonths)
+      const [list, freshPrices] = await Promise.all([
+        fetchCalendarAtendimentos(sortedValidMonths),
+        fetchSavedPrices().catch(() => null),
+      ])
+      const pricesToUse = freshPrices || dbPrices
+      if (freshPrices) {
+        setDbPrices(freshPrices)
+        localStorage.setItem('patientPrices', JSON.stringify(freshPrices))
+      }
       setRawPatients(list)
-      processPatients(list, dbPrices, dbMappings, sortedValidMonths, patientsData)
+      processPatients(list, pricesToUse, dbMappings, sortedValidMonths, patientsData)
       if (list.length === 0) {
         showToast('Nenhum atendimento encontrado nos meses selecionados.')
       }
@@ -335,7 +344,7 @@ export function Fechamento() {
         [name]: { ...prev[name], price: val },
       }
     })
-    showToast(`Valor de ${name} atualizado!`)
+    showToast(`Valor de ${name} atualizado (sincronizado com Pacotes)!`)
   }
 
   const handleDeleteManagedPrice = async (name: string) => {

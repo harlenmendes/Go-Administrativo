@@ -106,6 +106,7 @@ export function PackageReportModal({
     completedCount,
     scheduledFutureCount,
     remainingCount,
+    effectiveSessionPrice,
     totalValue,
   } = computedPkg
 
@@ -478,7 +479,7 @@ export function PackageReportModal({
 
               <div className="text-left sm:text-right">
                 <p className="text-xs text-brand-muted">
-                  Sessão: <strong className="text-primary">{formatBRL(pkg.session_price)}</strong>
+                  Sessão: <strong className="text-primary">{formatBRL(effectiveSessionPrice)}</strong>
                 </p>
                 <p className="text-base font-bold text-primary">
                   Total: {formatBRL(totalValue)}
